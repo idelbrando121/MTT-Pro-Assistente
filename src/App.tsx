@@ -51,10 +51,10 @@ const evaluateHand = (handStr: string, boardStr: string): { score: number, descr
     if (/^(qq|aks|jj)$/.test(hand)) return { score: 9.5, description: 'JJ+ / AKs' };
     if (/^(ak|ako|tt|aqs)$/.test(hand)) return { score: 9.0, description: 'AK / TT / AQs' };
     if (/^(99|ajs|aqo|kqs|88)$/.test(hand)) return { score: 8.0, description: 'Mãos Fortes' };
-    if (/^(ats|kjs|qjs|ajo|77)$/.test(hand)) return { score: 7.5, description: 'Mãos de Abertura' };
-    if (/^(66|55|kts|qts|jts|t9s|kqo)$/.test(hand)) return { score: 6.5, description: 'Speculative/Mid' };
-    if (/^(44|33|22|98s|87s|76s|at|kjo)$/.test(hand)) return { score: 5.5, description: 'Low Pairs / SCs' };
-    if (hand.endsWith('s')) return { score: 4.5, description: 'Suited Trash' };
+    if (/^(ats|kjs|qjs|ajo|77|a9s|a8s|a7s|kts|qts|jts)$/.test(hand)) return { score: 7.5, description: 'Mãos de Abertura' };
+    if (/^(66|55|t9s|kqo|a9o|a8o|a7o|k9s|at)$/.test(hand)) return { score: 6.5, description: 'Speculative/Mid' };
+    if (/^(44|33|22|98s|87s|76s|kjo|k9o|k8o|q9o|q8o|q9s|q8s|j9s|a6o|a5o)$/.test(hand)) return { score: 5.5, description: 'Low Pairs / SCs / Broadways Curtos' };
+    if (hand.endsWith('s') || /^([akqj]..)$/.test(hand)) return { score: 4.5, description: 'Face Cards / Suited' };
     return { score: 2.0, description: 'Lixo / Fold' };
   }
 
@@ -127,18 +127,25 @@ const evaluateMTT = (
   
   if (board === '') {
     const posIndex = POSITIONS.indexOf(pos);
-    if (posIndex <= 2) score -= 1.0; 
-    if (pos === 'BTN' || pos === 'CO') score += 0.5;
-    if (stack < 15 && score >= 6.0) score += 2.0; 
+    // Position adjustments (Lower index = earlier position)
+    if (posIndex <= 2) score -= 1.2; // UTG/UTG+1/UTG+2 are tighter
+    if (pos === 'BTN') score += 1.8; // Button is extremely aggressive
+    if (pos === 'CO') score += 1.2;  // CO is very aggressive
+    if (pos === 'HJ') score += 0.5;
+    
+    // Stack adjustments for Push/Fold phase
+    if (stack < 15 && score >= 5.0) score += 2.5; 
+    if (stack < 10) score += 1.0;
   }
-  if (phase === 3) score -= 0.5;
+  
+  if (phase === 3) score -= 0.8; // Tighten up significantly on the Bubble
 
   let suggestion: Action = 'FOLD';
   if (score >= 8.5) {
     suggestion = 'ALL-IN';
-  } else if (score >= 7.0) {
+  } else if (score >= 6.8) {
     suggestion = potOdds < 30 ? 'RAISE' : 'CALL';
-  } else if (score >= 5.0) {
+  } else if (score >= 4.8) {
     suggestion = potOdds < 25 ? 'CALL' : 'FOLD';
   } else {
     suggestion = 'FOLD';
