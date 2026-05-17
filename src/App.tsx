@@ -51,23 +51,73 @@ const PHASES = [
 
 const evaluateHand = (handStr: string, boardStr: string): { score: number, description: string } => {
   const normalize = (c: string) => {
-    if (c.length < 2) return c;
-    const r = c[0];
-    let s = c[1].toLowerCase();
-    if (s === 'e') s = 's'; // Espada
-    if (s === 'o') s = 'd'; // Ouro
-    if (s === 'p') s = 'c'; // Paus
-    if (s === 'c') s = 'h'; // Copa -> Hearts
-    return r + s;
+    if (!c || c.length < 2) return c;
+    let r = '';
+    let s = '';
+    
+    const trimmed = c.trim();
+    if (trimmed.startsWith('10')) {
+      r = 'T';
+      s = trimmed.substring(2);
+    } else {
+      r = trimmed[0].toUpperCase();
+      s = trimmed.substring(1);
+    }
+
+    const suitMap: Record<string, string> = {
+      '♥': 'h', 'h': 'h', 'c': 'h', 'copa': 'h',
+      '♦': 'd', 'd': 'd', 'o': 'd', 'ouro': 'd',
+      '♣': 'c', 'p': 'c', 'paus': 'c',
+      '♠': 's', 's': 's', 'e': 's', 'espada': 's'
+    };
+
+    // Special case for 'c' which can be Clubs (paus) or Copa (Hearts)
+    // In many PT contexts, 'c' is Copa. In standard poker, 'c' is Clubs.
+    // We already handle symbols ♥ and ♣.
+    
+    let finalSuit = '';
+    for (const char of s.toLowerCase()) {
+      if (suitMap[char]) {
+        finalSuit = suitMap[char];
+        break;
+      }
+    }
+    
+    if (!finalSuit) finalSuit = s[0]?.toLowerCase() || 'x';
+
+    return r + finalSuit;
   };
 
-  const handNormalized = handStr.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const board = boardStr.toLowerCase().split(' ').filter(c => c.length >= 2).map(normalize);
-  const handCards = (handNormalized.match(/.{1,2}/g) || []).map(normalize);
+  const handNormalized = handStr.toLowerCase();
+  const isSuitedInput = handNormalized.includes('s') && !handNormalized.includes('h') && !handNormalized.includes('d') && !handNormalized.includes('c');
+  
+  const board = boardStr.split(' ').filter(c => c.trim().length >= 2).map(normalize);
+  
+  // Post-flop: extract full cards from hand string (e.g. "Ah Kh")
+  let handCards: string[] = [];
+  const cardRegex = /([2-9tjqka]|10)[hsdc♥♦♣♠eo cp]/gi;
+  const matchedCards = handStr.match(cardRegex);
+  
+  if (matchedCards && matchedCards.length >= 2) {
+    handCards = matchedCards.map(normalize);
+  } else {
+    // Pre-flop format fallback "AKs", "72o"
+    // For post-flop evaluation, we need specific suits for flush detection.
+    // If they typed "AKs" on flop, we assume they are suited but suits are unknown 'x'
+    const ranks = handNormalized.replace(/[^2-9tjqka]/g, '').toUpperCase();
+    if (ranks.length >= 2) {
+      if (isSuitedInput) {
+        handCards = [ranks[0] + 'x', ranks[1] + 'x'];
+      } else {
+        handCards = [ranks[0] + 'x', ranks[1] + 'y'];
+      }
+    }
+  }
+
   const fullCards = [...handCards, ...board];
   
   if (board.length === 0) {
-    const h = handNormalized;
+    const h = handNormalized.replace(/[^a-z0-9]/g, '');
     if (/^(aa|kk)$/.test(h)) return { score: 10, description: 'AA/KK Premium' };
     if (/^(qq|ak[shdco]|jj)$/.test(h)) return { score: 9.5, description: 'JJ+ / AKs' };
     if (/^(ak|tt|aq[shdco])$/.test(h)) return { score: 9.0, description: 'AK / TT / AQs' };
@@ -76,23 +126,34 @@ const evaluateHand = (handStr: string, boardStr: string): { score: number, descr
     return { score: 2.0, description: 'Lixo / Fold' };
   }
 
-  const ranks: Record<string, number> = {};
-  const suits: Record<string, number> = {};
+  const ranksCount: Record<string, number> = {};
+  const suitsCount: Record<string, number> = {};
   
   fullCards.forEach(c => {
-    const r = c[0].toUpperCase();
-    const s = c[1]?.toLowerCase();
-    ranks[r] = (ranks[r] || 0) + 1;
-    if (s) suits[s] = (suits[s] || 0) + 1;
+    const r = c[0];
+    const s = c[1];
+    ranksCount[r] = (ranksCount[r] || 0) + 1;
+    if (s && s !== 'x' && s !== 'y') suitsCount[s] = (suitsCount[s] || 0) + 1;
+    // Handle the dummy 'x' suit for AKs inputs
+    if (s === 'x') suitsCount['dummy_suited'] = (suitsCount['dummy_suited'] || 0) + 1;
   });
 
-  const counts = Object.values(ranks);
+  const counts = Object.values(ranksCount);
   const maxCount = Math.max(...counts);
   const pairCount = counts.filter(v => v === 2).length;
-  const isFlushDraw = Object.values(suits).some(v => v === 4);
-  const isFlush = Object.values(suits).some(v => v >= 5);
+  
+  // Flush detection
+  let isFlush = false;
+  let isFlushDraw = false;
+  let isBackdoor = false;
 
-  const rankValues = Object.keys(ranks)
+  Object.values(suitsCount).forEach(v => {
+    if (v >= 5) isFlush = true;
+    if (v === 4) isFlushDraw = true;
+    if (v === 3 && board.length === 3) isBackdoor = true;
+  });
+
+  const rankValues = Object.keys(ranksCount)
     .map(r => {
       if (r === 'A') return 14;
       if (r === 'K') return 13;
@@ -114,19 +175,34 @@ const evaluateHand = (handStr: string, boardStr: string): { score: number, descr
     }
   }
 
-  if (isFlush) return { score: 9.3, description: 'Flush!' };
-  if (maxConsecutive >= 5) return { score: 9.1, description: 'Sequência!' };
-  if (maxCount === 4) return { score: 9.8, description: 'Quadra!' };
-  if (maxCount === 3 && pairCount >= 1) return { score: 9.5, description: 'Full House' };
-  if (maxCount === 3) return { score: 7.8, description: 'Trinca' };
-  if (pairCount >= 2) return { score: 7.3, description: 'Dois Pares' };
-  if (pairCount === 1) return { score: 5.8, description: 'Um Par' };
+  let finalScore = 3.0;
+  let finalDesc = 'Carta Alta';
 
-  if (isFlushDraw && maxConsecutive === 4) return { score: 7.5, description: 'Flush Draw + Seq Aberta' };
-  if (isFlushDraw) return { score: 6.8, description: 'Flush Draw' };
-  if (maxConsecutive === 4) return { score: 6.0, description: 'Sequência Aberta' };
+  if (isFlush) { finalScore = 9.3; finalDesc = 'Flush!'; }
+  else if (maxCount === 4) { finalScore = 9.8; finalDesc = 'Quadra!'; }
+  else if (maxCount === 3 && pairCount >= 1) { finalScore = 9.5; finalDesc = 'Full House'; }
+  else if (maxConsecutive >= 5) { finalScore = 9.1; finalDesc = 'Sequência!'; }
+  else if (maxCount === 3) { finalScore = 7.8; finalDesc = 'Trinca'; }
+  else if (pairCount >= 2) { finalScore = 7.3; finalDesc = 'Dois Pares'; }
+  else if (pairCount === 1) { finalScore = 5.8; finalDesc = 'Um Par'; }
 
-  return { score: 3.0, description: 'Carta Alta / Sem Jogo' };
+  // Draw adjustments
+  if (!isFlush) {
+    if (isFlushDraw) {
+      finalScore += 1.5;
+      finalDesc += ' + Flush Draw';
+    } else if (isBackdoor) {
+      finalScore += 0.5;
+      finalDesc += ' + Backdoor Flush';
+    }
+  }
+
+  if (maxConsecutive === 4 && finalScore < 8.0) {
+    finalScore += 1.2;
+    if (!finalDesc.includes('Draw')) finalDesc += ' + Seq Aberta';
+  }
+
+  return { score: finalScore, description: finalDesc };
 };
 
 const evaluateMTT = (
@@ -140,12 +216,19 @@ const evaluateMTT = (
   learningData: Record<string, HandHistory>,
   villainPos: VillainPosition,
   villainAction: VillainAction,
-  villainProfile: VillainProfile
+  villainProfile: VillainProfile,
+  playersInPot: number
 ): EvaluationResult => {
   const { score: baseScore, description: madeHand } = evaluateHand(hand, board);
   let score = baseScore;
   const potOdds = call > 0 ? (call / (pot + call)) * 100 : 0;
   const posIndex = POSITIONS.indexOf(pos);
+
+  // --- Ajuste por Jogadores no Pote ---
+  if (playersInPot === 1) score += 1.0;
+  else if (playersInPot === 3) score -= 0.5;
+  else if (playersInPot === 4) score -= 1.0;
+  else if (playersInPot >= 5) score -= 1.5;
 
   // --- Perfil do Vilão ---
   if (villainProfile === 'AGRESSIVO') score += 1.5;
@@ -270,6 +353,8 @@ export default function App() {
   const [villainPos, setVillainPos] = useState<VillainPosition>('NONE');
   const [villainAction, setVillainAction] = useState<VillainAction>('NONE');
   const [villainProfile, setVillainProfile] = useState<VillainProfile>('MEDIO');
+  const [playersInPot, setPlayersInPot] = useState<number>(2);
+  const [suitedToggle, setSuitedToggle] = useState<boolean | null>(null);
   const [learningData, setLearningData] = useState<Record<string, HandHistory>>(() => {
     const saved = localStorage.getItem('mtt_learning_data_v1');
     return saved ? JSON.parse(saved) : {};
@@ -281,8 +366,8 @@ export default function App() {
 
   const result = useMemo(() => {
     if (!hand) return null;
-    return evaluateMTT(hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile);
-  }, [hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile]);
+    return evaluateMTT(hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile, playersInPot);
+  }, [hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile, playersInPot]);
 
   const canContinue = useMemo(() => {
     if (street === 'PRE') return hand.length >= 2;
@@ -398,10 +483,10 @@ export default function App() {
 
           <div className="flex flex-col gap-4">
             {street === 'PRE' && (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-                  Digite sua mão (Ex: AKs, AKo, TT, 72o)
-                  <span className="block text-[8px] opacity-40">Naipe: o=ouro, e=espada, c=copa, p=paus</span>
+                  Sua Mão (Ex: AKs, AKo, TT)
+                  <span className="block text-[8px] opacity-40">Add 's' para mesmo naipe ou 'o' para diferentes</span>
                 </label>
                 <input
                   ref={inputRef}
@@ -415,63 +500,70 @@ export default function App() {
                   className="bg-slate-800 border-2 border-slate-700 text-4xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
                   placeholder="---"
                 />
+                
+                {hand.length === 2 && hand[0] !== hand[1] && (
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => { setHand(prev => prev.replace(/[so]/gi, '') + 's'); setSuitedToggle(true); }}
+                      className={`flex-1 py-2 text-[10px] font-black rounded border transition-all ${hand.toLowerCase().includes('s') ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-500'}`}
+                    >
+                      MESMO NAIPE (s)
+                    </button>
+                    <button 
+                      onClick={() => { setHand(prev => prev.replace(/[so]/gi, '') + 'o'); setSuitedToggle(false); }}
+                      className={`flex-1 py-2 text-[10px] font-black rounded border transition-all ${hand.toLowerCase().includes('o') ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-500'}`}
+                    >
+                      NAIPES DIF. (o)
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
-            {street === 'FLOP' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-                  Digite as 3 cartas do flop (Ex: A 7 2)
-                  <span className="block text-[8px] opacity-40">Espaçado. Ex: Ad 7h 2c</span>
-                </label>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={flop}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val.toLowerCase() === 'desistir') handleFold();
-                    else setFlop(val);
-                  }}
-                  className="bg-slate-800 border-2 border-slate-700 text-3xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
-                  placeholder="--- --- ---"
-                />
-              </div>
-            )}
-
-            {street === 'TURN' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Digite a 4ª carta do turn</label>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={turn}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val.toLowerCase() === 'desistir') handleFold();
-                    else setTurn(val);
-                  }}
-                  className="bg-slate-800 border-2 border-slate-700 text-3xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
-                  placeholder="---"
-                />
-              </div>
-            )}
-
-            {street === 'RIVER' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Digite a 5ª carta do river</label>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={river}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val.toLowerCase() === 'desistir') handleFold();
-                    else setRiver(val);
-                  }}
-                  className="bg-slate-800 border-2 border-slate-700 text-3xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
-                  placeholder="---"
-                />
+            {street !== 'PRE' && (
+              <div className="flex flex-col gap-4">
+                 <div className="flex flex-col gap-2">
+                    <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                      {street === 'FLOP' ? '3 Cartas do Flop' : street === 'TURN' ? '4ª Carta (Turn)' : '5ª Carta (River)'}
+                      <span className="block text-[8px] opacity-40 italic">Ex: A♥ 7♦ 2♣ ou Ah 7d 2c</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={street === 'FLOP' ? flop : street === 'TURN' ? turn : river}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val.toLowerCase() === 'desistir') handleFold();
+                          if (street === 'FLOP') setFlop(val);
+                          else if (street === 'TURN') setTurn(val);
+                          else setRiver(val);
+                        }}
+                        className="w-full bg-slate-800 border-2 border-slate-700 text-2xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
+                        placeholder="VALOR + NAIPE"
+                      />
+                    </div>
+                 </div>
+                 <div className="grid grid-cols-4 gap-1">
+                    {[
+                      { s: '♥', c: 'text-red-500', char: 'h' },
+                      { s: '♦', c: 'text-blue-400', char: 'd' },
+                      { s: '♣', c: 'text-emerald-500', char: 'c' },
+                      { s: '♠', c: 'text-white', char: 's' }
+                    ].map(suit => (
+                      <button
+                        key={suit.s}
+                        onClick={() => {
+                          const setter = street === 'FLOP' ? setFlop : street === 'TURN' ? setTurn : setRiver;
+                          const current = street === 'FLOP' ? flop : street === 'TURN' ? turn : river;
+                          setter(current + suit.s + ' ');
+                        }}
+                        className={`py-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 transition-colors ${suit.c} text-xl font-bold`}
+                      >
+                        {suit.s}
+                      </button>
+                    ))}
+                 </div>
               </div>
             )}
           </div>
@@ -507,6 +599,25 @@ export default function App() {
                   className={`p-2 text-[10px] rounded border font-bold transition-all ${pos === p ? 'bg-blue-600 border-blue-400 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
                 >
                   {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+              {street === 'PRE' ? 'Jogadores no Pote' : 'Jogadores Restantes'}
+            </label>
+            <div className="grid grid-cols-5 gap-1">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPlayersInPot(n)}
+                  className={`py-2 text-[10px] font-bold rounded border transition-all ${
+                    playersInPot === n ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400'
+                  }`}
+                >
+                  {n}{n === 5 ? '+' : ''}
                 </button>
               ))}
             </div>
