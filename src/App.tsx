@@ -127,35 +127,65 @@ const evaluateMTT = (
   
   if (board === '') {
     const posIndex = POSITIONS.indexOf(pos);
-    // Position adjustments (Lower index = earlier position)
-    if (posIndex <= 2) score -= 1.2; // UTG/UTG+1/UTG+2 are tighter
-    if (pos === 'BTN') score += 1.8; // Button is extremely aggressive
-    if (pos === 'CO') score += 1.2;  // CO is very aggressive
-    if (pos === 'HJ') score += 0.5;
+    // Position adjustments to align with requested ranges:
+    // UTG: 10-12% | HJ: 16-18% | CO: 25-28% | BTN: 40-45% | SB: 30-35%
+    if (posIndex <= 2) score -= 1.8; 
+    if (pos === 'LJ') score -= 0.8;
+    if (pos === 'HJ') score += 0.2;  
+    if (pos === 'CO') score += 1.5;  
+    if (pos === 'BTN') score += 3.2; 
+    if (pos === 'SB') score += 2.2;  
     
+    // Phase-based adjustments
+    if (phase === 1) { // INICIO
+      score -= 0.5; // Play tighter to preserve chips
+    } else if (phase === 3) { // BOLHA
+      score -= 2.0; // Extreme survival mode
+    } else if (phase === 4) { // ITM
+      score += 0.5; // Loosen up once in the money
+    } else if (phase === 5) { // FINAL
+      score += 1.2; // High aggression for ICM/Stealing
+    }
+
     // Stack adjustments for Push/Fold phase
-    if (stack < 15 && score >= 5.0) score += 2.5; 
-    if (stack < 10) score += 1.0;
+    if (stack < 15 && score >= 4.0) score += 2.5; 
+    if (stack < 10) score += 1.5;
   }
   
-  if (phase === 3) score -= 0.8; // Tighten up significantly on the Bubble
+  // Post-flop phase adjustments (less drastic than pre-flop)
+  if (board !== '') {
+    if (phase === 3) score -= 0.5;
+    if (phase === 5) score += 0.3;
+  }
 
   let suggestion: Action = 'FOLD';
   if (score >= 8.5) {
     suggestion = 'ALL-IN';
-  } else if (score >= 6.8) {
+  } else if (score >= 6.5) {
     suggestion = potOdds < 30 ? 'RAISE' : 'CALL';
-  } else if (score >= 4.8) {
+  } else if (score >= 4.5) {
     suggestion = potOdds < 25 ? 'CALL' : 'FOLD';
   } else {
     suggestion = 'FOLD';
   }
 
+  const posReasoning = {
+    'UTG': 'UTG (12%): Apenas mãos premium.',
+    'UTG+1': 'UTG+1 (12%): Mãos muito fortes.',
+    'UTG+2': 'UTG+2 (12%): Mãos muito fortes.',
+    'LJ': 'LJ (14%): Range restrito.',
+    'HJ': 'HJ (18%): Começando a abrir.',
+    'CO': 'CO (28%): Atacar posições finais.',
+    'BTN': 'BTN (45%): Roubo agressivo de blinds.',
+    'SB': 'SB (35%): Range amplo, mas cuidado OOP.',
+    'BB': 'BB: Defesa de blind.'
+  };
+
   return { 
     score: Math.min(10, Math.max(0, score)), 
     suggestion, 
     potOdds, 
-    reasoning: `Score: ${score.toFixed(1)} | Odds: ${potOdds.toFixed(1)}%`,
+    reasoning: board === '' ? posReasoning[pos] : `Score Post-Flop: ${score.toFixed(1)} | Odds: ${potOdds.toFixed(1)}%`,
     madeHand
   };
 };
