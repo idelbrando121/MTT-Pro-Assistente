@@ -17,8 +17,16 @@ import { motion, AnimatePresence } from 'motion/react';
 
 type Position = 'UTG' | 'UTG+1' | 'UTG+2' | 'LJ' | 'HJ' | 'CO' | 'BTN' | 'SB' | 'BB';
 type Phase = 1 | 2 | 3 | 4 | 5; // 1:INI, 2:MID, 3:BUBBLE, 4:ITM, 5:FINAL
-type Action = 'PUSH' | 'FOLD' | 'CALL' | 'RAISE' | 'ALL-IN';
+type Action = 'PUSH' | 'FOLD' | 'CALL' | 'RAISE' | 'ALL-IN' | string;
 type Street = 'PRE' | 'FLOP' | 'TURN' | 'RIVER';
+type VillainPosition = 'EP' | 'MP' | 'CO' | 'BTN' | 'SB' | 'BB' | 'NONE';
+type VillainAction = 'FOLD' | 'CALL' | 'RAISE' | 'ALL-IN' | 'NONE';
+type VillainProfile = 'AGRESSIVO' | 'MEDIO' | 'TIGHT';
+
+interface HandHistory {
+  wins: number;
+  total: number;
+}
 
 interface EvaluationResult {
   score: number; // 0-10
@@ -26,6 +34,8 @@ interface EvaluationResult {
   potOdds: number;
   reasoning: string;
   madeHand: string;
+  history?: HandHistory;
+  scoreBase?: number;
 }
 
 const POSITIONS: Position[] = ['UTG', 'UTG+1', 'UTG+2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
@@ -40,25 +50,32 @@ const PHASES = [
 // --- Poker Logic Helpers ---
 
 const evaluateHand = (handStr: string, boardStr: string): { score: number, description: string } => {
-  const hand = handStr.toLowerCase().replace(/[^a-z0-9s]/g, '');
-  const board = boardStr.toLowerCase().split(' ').filter(c => c.length >= 1);
-  const handCards = hand.match(/.{1,2}/g) || [];
+  const normalize = (c: string) => {
+    if (c.length < 2) return c;
+    const r = c[0];
+    let s = c[1].toLowerCase();
+    if (s === 'e') s = 's'; // Espada
+    if (s === 'o') s = 'd'; // Ouro
+    if (s === 'p') s = 'c'; // Paus
+    if (s === 'c') s = 'h'; // Copa -> Hearts
+    return r + s;
+  };
+
+  const handNormalized = handStr.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const board = boardStr.toLowerCase().split(' ').filter(c => c.length >= 2).map(normalize);
+  const handCards = (handNormalized.match(/.{1,2}/g) || []).map(normalize);
   const fullCards = [...handCards, ...board];
   
-  // PRE-FLOP LOGIC
   if (board.length === 0) {
-    if (/^(aa|kk)$/.test(hand)) return { score: 10, description: 'AA/KK Premium' };
-    if (/^(qq|aks|jj)$/.test(hand)) return { score: 9.5, description: 'JJ+ / AKs' };
-    if (/^(ak|ako|tt|aqs)$/.test(hand)) return { score: 9.0, description: 'AK / TT / AQs' };
-    if (/^(99|ajs|aqo|kqs|88)$/.test(hand)) return { score: 8.0, description: 'Mãos Fortes' };
-    if (/^(ats|kjs|qjs|ajo|77|a9s|a8s|a7s|kts|qts|jts)$/.test(hand)) return { score: 7.5, description: 'Mãos de Abertura' };
-    if (/^(66|55|t9s|kqo|a9o|a8o|a7o|k9s|at)$/.test(hand)) return { score: 6.5, description: 'Speculative/Mid' };
-    if (/^(44|33|22|98s|87s|76s|kjo|k9o|k8o|q9o|q8o|q9s|q8s|j9s|a6o|a5o)$/.test(hand)) return { score: 5.5, description: 'Low Pairs / SCs / Broadways Curtos' };
-    if (hand.endsWith('s') || /^([akqj]..)$/.test(hand)) return { score: 4.5, description: 'Face Cards / Suited' };
+    const h = handNormalized;
+    if (/^(aa|kk)$/.test(h)) return { score: 10, description: 'AA/KK Premium' };
+    if (/^(qq|ak[shdco]|jj)$/.test(h)) return { score: 9.5, description: 'JJ+ / AKs' };
+    if (/^(ak|tt|aq[shdco])$/.test(h)) return { score: 9.0, description: 'AK / TT / AQs' };
+    if (/^(99|aj[shdco]|aqo|kq[shdco]|88)$/.test(h)) return { score: 8.0, description: 'Mãos Fortes' };
+    if (/^(at[shdco]|kj[shdco]|qj[shdco]|ajo|77|a9[shdco])$/.test(h)) return { score: 7.5, description: 'Mãos de Abertura' };
     return { score: 2.0, description: 'Lixo / Fold' };
   }
 
-  // POST-FLOP HEURISTICS
   const ranks: Record<string, number> = {};
   const suits: Record<string, number> = {};
   
@@ -97,19 +114,19 @@ const evaluateHand = (handStr: string, boardStr: string): { score: number, descr
     }
   }
 
-  if (isFlush) return { score: 9.2, description: 'Flush!' };
-  if (maxConsecutive >= 5) return { score: 9.0, description: 'Sequência!' };
+  if (isFlush) return { score: 9.3, description: 'Flush!' };
+  if (maxConsecutive >= 5) return { score: 9.1, description: 'Sequência!' };
   if (maxCount === 4) return { score: 9.8, description: 'Quadra!' };
   if (maxCount === 3 && pairCount >= 1) return { score: 9.5, description: 'Full House' };
-  if (maxCount === 3) return { score: 7.5, description: 'Trinca' };
-  if (pairCount >= 2) return { score: 7.0, description: 'Dois Pares' };
-  if (pairCount === 1) return { score: 5.5, description: 'Um Par' };
+  if (maxCount === 3) return { score: 7.8, description: 'Trinca' };
+  if (pairCount >= 2) return { score: 7.3, description: 'Dois Pares' };
+  if (pairCount === 1) return { score: 5.8, description: 'Um Par' };
 
-  if (isFlushDraw && maxConsecutive === 4) return { score: 7.0, description: 'Flush Draw + Seq Aberta' };
-  if (isFlushDraw) return { score: 6.0, description: 'Flush Draw' };
-  if (maxConsecutive === 4) return { score: 5.5, description: 'Sequência Aberta' };
+  if (isFlushDraw && maxConsecutive === 4) return { score: 7.5, description: 'Flush Draw + Seq Aberta' };
+  if (isFlushDraw) return { score: 6.8, description: 'Flush Draw' };
+  if (maxConsecutive === 4) return { score: 6.0, description: 'Sequência Aberta' };
 
-  return { score: 3.0, description: 'Carta Alta / Draw' };
+  return { score: 3.0, description: 'Carta Alta / Sem Jogo' };
 };
 
 const evaluateMTT = (
@@ -119,16 +136,53 @@ const evaluateMTT = (
   phase: number,
   pot: number,
   call: number,
-  board: string
+  board: string,
+  learningData: Record<string, HandHistory>,
+  villainPos: VillainPosition,
+  villainAction: VillainAction,
+  villainProfile: VillainProfile
 ): EvaluationResult => {
   const { score: baseScore, description: madeHand } = evaluateHand(hand, board);
   let score = baseScore;
   const potOdds = call > 0 ? (call / (pot + call)) * 100 : 0;
+  const posIndex = POSITIONS.indexOf(pos);
+
+  // --- Perfil do Vilão ---
+  if (villainProfile === 'AGRESSIVO') score += 1.5;
+  if (villainProfile === 'TIGHT') score -= 1.5;
+
+  // --- Lógica do Vilão ---
+  if (villainAction !== 'NONE') {
+    if (villainAction === 'FOLD') {
+      score += 0.5; // Vilão foldou, mesa mais limpa
+    } else if (villainAction === 'CALL') {
+      // Score base mantido
+    } else if (villainAction === 'RAISE') {
+      // Posição ruim do vilão (EP/MP) = Range muito forte
+      if (villainPos === 'EP' || villainPos === 'MP') {
+        score -= 1.2;
+      } else {
+        score -= 0.6;
+      }
+    } else if (villainAction === 'ALL-IN') {
+      score -= 2.5; 
+    }
+  }
+
+  // Chave de aprendizado simplificada (ignora detalhes de naipes para agrupar melhor os dados)
+  const handKey = hand.toLowerCase().replace(/[eocp]/g, 'x'); 
+  const stackType = stack < 15 ? 'SHORT' : stack < 40 ? 'MEDIUM' : 'DEEP';
+  const learningKey = `${handKey}:${pos}:${stackType}:${phase}`;
+  const history = learningData[learningKey];
+
+  // Ajuste do sistema baseado no aprendizado (mínimo 5 mãos para confiar)
+  if (history && history.total >= 5) {
+    const winRate = history.wins / history.total;
+    if (winRate >= 0.60) score += 1.5; // Usuário ganha muito com essa mão aqui -> seja mais agressivo
+    if (winRate <= 0.40) score -= 1.5; // Usuário perde muito -> seja mais conservador
+  }
   
   if (board === '') {
-    const posIndex = POSITIONS.indexOf(pos);
-    // Position adjustments to align with requested ranges:
-    // UTG: 10-12% | HJ: 16-18% | CO: 25-28% | BTN: 40-45% | SB: 30-35%
     if (posIndex <= 2) score -= 1.8; 
     if (pos === 'LJ') score -= 0.8;
     if (pos === 'HJ') score += 0.2;  
@@ -136,57 +190,69 @@ const evaluateMTT = (
     if (pos === 'BTN') score += 3.2; 
     if (pos === 'SB') score += 2.2;  
     
-    // Phase-based adjustments
-    if (phase === 1) { // INICIO
-      score -= 0.5; // Play tighter to preserve chips
-    } else if (phase === 3) { // BOLHA
-      score -= 2.0; // Extreme survival mode
-    } else if (phase === 4) { // ITM
-      score += 0.5; // Loosen up once in the money
-    } else if (phase === 5) { // FINAL
-      score += 1.2; // High aggression for ICM/Stealing
-    }
+    if (phase === 1) score -= 0.5;
+    else if (phase === 3) score -= 2.0;
+    else if (phase === 4) score += 0.5;
+    else if (phase === 5) score += 1.2;
 
-    // Stack adjustments for Push/Fold phase
     if (stack < 15 && score >= 4.0) score += 2.5; 
     if (stack < 10) score += 1.5;
   }
   
-  // Post-flop phase adjustments (less drastic than pre-flop)
   if (board !== '') {
     if (phase === 3) score -= 0.5;
     if (phase === 5) score += 0.3;
   }
 
   let suggestion: Action = 'FOLD';
-  if (score >= 8.5) {
+  let raiseSize = '';
+
+  // Bloqueio de segurança contra All-in do vilão
+  if (villainAction === 'ALL-IN' && score < 9.0) {
+    suggestion = 'FOLD';
+  } else if (score >= 8.5) {
     suggestion = 'ALL-IN';
   } else if (score >= 6.5) {
-    suggestion = potOdds < 30 ? 'RAISE' : 'CALL';
+    if (villainAction === 'RAISE' && score < 7.5) {
+      suggestion = 'FOLD'; // Desistir de mãos marginais contra raises
+    } else if (potOdds < 30) {
+      suggestion = 'RAISE';
+      if (stack > 50 || posIndex <= 2) raiseSize = ' (3x-4x)';
+      else raiseSize = ' (2x-2.5x)';
+    } else {
+      suggestion = 'CALL';
+    }
   } else if (score >= 4.5) {
-    suggestion = potOdds < 25 ? 'CALL' : 'FOLD';
+    // Se houve agressão do vilão e a mão é apenas média, foldar
+    if (villainAction === 'RAISE' || villainAction === 'ALL-IN') {
+      suggestion = 'FOLD';
+    } else {
+      suggestion = potOdds < 25 ? 'CALL' : 'FOLD';
+    }
   } else {
     suggestion = 'FOLD';
   }
 
   const posReasoning = {
-    'UTG': 'UTG (12%): Apenas mãos premium.',
-    'UTG+1': 'UTG+1 (12%): Mãos muito fortes.',
-    'UTG+2': 'UTG+2 (12%): Mãos muito fortes.',
-    'LJ': 'LJ (14%): Range restrito.',
-    'HJ': 'HJ (18%): Começando a abrir.',
-    'CO': 'CO (28%): Atacar posições finais.',
-    'BTN': 'BTN (45%): Roubo agressivo de blinds.',
-    'SB': 'SB (35%): Range amplo, mas cuidado OOP.',
-    'BB': 'BB: Defesa de blind.'
+    'UTG': 'UTG (12%): Conservador.',
+    'UTG+1': 'UTG+1 (12%).',
+    'UTG+2': 'UTG+2 (12%).',
+    'LJ': 'LJ (14%).',
+    'HJ': 'HJ (18%).',
+    'CO': 'CO (28%): Atacar.',
+    'BTN': 'BTN (45%): Roubo agressivo.',
+    'SB': 'SB (35%): Amplo, mas Cuidado.',
+    'BB': 'BB: Defesa.'
   };
 
   return { 
     score: Math.min(10, Math.max(0, score)), 
-    suggestion, 
+    suggestion: (suggestion + raiseSize) as Action, 
     potOdds, 
-    reasoning: board === '' ? posReasoning[pos] : `Score Post-Flop: ${score.toFixed(1)} | Odds: ${potOdds.toFixed(1)}%`,
-    madeHand
+    reasoning: board === '' ? posReasoning[pos] : `Score Pós-Flop: ${score.toFixed(1)} | Odds: ${potOdds.toFixed(1)}%`,
+    madeHand,
+    history,
+    scoreBase: score // Pass score to UI if needed
   };
 };
 
@@ -201,14 +267,41 @@ export default function App() {
   const [turn, setTurn] = useState('');
   const [river, setRiver] = useState('');
   const [street, setStreet] = useState<Street>('PRE');
+  const [villainPos, setVillainPos] = useState<VillainPosition>('NONE');
+  const [villainAction, setVillainAction] = useState<VillainAction>('NONE');
+  const [villainProfile, setVillainProfile] = useState<VillainProfile>('MEDIO');
+  const [learningData, setLearningData] = useState<Record<string, HandHistory>>(() => {
+    const saved = localStorage.getItem('mtt_learning_data_v1');
+    return saved ? JSON.parse(saved) : {};
+  });
   
   const inputRef = useRef<HTMLInputElement>(null);
 
   const fullBoard = [flop, turn, river].filter(Boolean).join(' ');
 
   const result = useMemo(() => {
-    return evaluateMTT(hand, pos, stack, phase, pot, betToCall, fullBoard);
-  }, [hand, pos, stack, phase, pot, betToCall, fullBoard]);
+    if (!hand) return null;
+    return evaluateMTT(hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile);
+  }, [hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile]);
+
+  const recordOutcome = (won: boolean) => {
+    if (!hand) return;
+    const handKey = hand.toLowerCase().replace(/[eocp]/g, 'x'); 
+    const stackType = stack < 15 ? 'SHORT' : stack < 40 ? 'MEDIUM' : 'DEEP';
+    const learningKey = `${handKey}:${pos}:${stackType}:${phase}`;
+    
+    const current = learningData[learningKey] || { wins: 0, total: 0 };
+    const updated = {
+      ...learningData,
+      [learningKey]: {
+        wins: current.wins + (won ? 1 : 0),
+        total: current.total + 1
+      }
+    };
+    
+    setLearningData(updated);
+    localStorage.setItem('mtt_learning_data_v1', JSON.stringify(updated));
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -235,7 +328,7 @@ export default function App() {
         <div className="flex items-center gap-4">
           <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
           <h1 className="text-xl font-bold tracking-tight text-white uppercase flex items-baseline gap-2">
-            Assistente MTT <span className="text-slate-500 font-normal text-xs font-mono">V2.4_LIVE</span>
+            Assistente MTT <span className="text-blue-500 font-normal text-xs font-mono italic">LEARNING_PRO</span>
           </h1>
         </div>
         <div className="hidden md:flex gap-1 overflow-x-auto px-2 py-1">
@@ -273,7 +366,10 @@ export default function App() {
           <div className="flex flex-col gap-4">
             {street === 'PRE' && (
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Mão (Ex: AKs, TT)</label>
+                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                  Mão (Ex: AhKs, 99, 72o)
+                  <span className="block text-[8px] opacity-40">Naipe: o=ouro, e=espada, c=copa, p=paus</span>
+                </label>
                 <input
                   ref={inputRef}
                   type="text"
@@ -287,7 +383,10 @@ export default function App() {
 
             {street === 'FLOP' && (
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Flop (3 cartas - Ex: As 7d 2c)</label>
+                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+                  Flop (Ex: As 7o 2c)
+                  <span className="block text-[8px] opacity-40">Espaçado. Ex: Ad 7h 2c</span>
+                </label>
                 <input
                   ref={inputRef}
                   type="text"
@@ -339,7 +438,7 @@ export default function App() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">A Pagar (BB)</label>
+              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Inves. (BB)</label>
               <input
                 type="number"
                 value={betToCall}
@@ -364,6 +463,67 @@ export default function App() {
             </div>
           </div>
 
+          <div className="p-4 bg-slate-950/50 border border-slate-800 rounded-lg flex flex-col gap-3">
+             <div className="flex items-center gap-2">
+                <AlertTriangle className="w-3 h-3 text-red-500" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-red-500">Simulação do Vilão</span>
+             </div>
+             
+             <div className="flex flex-col gap-2">
+                <label className="text-[8px] uppercase text-slate-500 font-bold">Onde ele está?</label>
+                <div className="grid grid-cols-4 gap-1">
+                  {(['EP', 'MP', 'CO', 'BTN', 'SB', 'BB', 'NONE'] as VillainPosition[]).map(vp => (
+                    <button 
+                      key={vp}
+                      onClick={() => setVillainPos(vp)}
+                      className={`py-1 text-[8px] font-bold rounded border ${villainPos === vp ? 'bg-red-600 border-red-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-600'}`}
+                    >
+                      {vp}
+                    </button>
+                  ))}
+                </div>
+             </div>
+
+             <div className="flex flex-col gap-2">
+                <label className="text-[8px] uppercase text-slate-500 font-bold">O que ele fez?</label>
+                <div className="grid grid-cols-2 gap-1">
+                  {(['NONE', 'FOLD', 'CALL', 'RAISE', 'ALL-IN'] as VillainAction[]).map(va => (
+                    <button 
+                      key={va}
+                      onClick={() => setVillainAction(va)}
+                      className={`py-2 text-[9px] font-black rounded border transition-all ${villainAction === va ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                    >
+                      {va}
+                    </button>
+                  ))}
+                </div>
+             </div>
+
+             <div className="flex flex-col gap-2 mt-2">
+                <label className="text-[8px] uppercase text-slate-500 font-bold">Perfil do Vilão (Estimado)</label>
+                <div className="grid grid-cols-3 gap-1">
+                  <button 
+                    onClick={() => setVillainProfile('AGRESSIVO')}
+                    className={`py-2 text-[8px] font-black rounded border transition-all ${villainProfile === 'AGRESSIVO' ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-900 border-slate-800 text-emerald-600/60'}`}
+                  >
+                    AGRESSIVO
+                  </button>
+                  <button 
+                    onClick={() => setVillainProfile('MEDIO')}
+                    className={`py-2 text-[8px] font-black rounded border transition-all ${villainProfile === 'MEDIO' ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                  >
+                    MÉDIO
+                  </button>
+                  <button 
+                    onClick={() => setVillainProfile('TIGHT')}
+                    className={`py-2 text-[8px] font-black rounded border transition-all ${villainProfile === 'TIGHT' ? 'bg-red-900 border-red-800 text-white' : 'bg-slate-900 border-slate-800 text-red-500/60'}`}
+                  >
+                    TIGHT
+                  </button>
+                </div>
+             </div>
+          </div>
+
           <div className="flex flex-col gap-2">
             <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Stack: {stack}BB</label>
             <input 
@@ -377,73 +537,114 @@ export default function App() {
         {/* Right Panel */}
         <div className="flex-1 p-8 flex flex-col bg-[#020617] overflow-y-auto">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={result.score + result.suggestion}
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.02 }}
-              className="flex-1 flex flex-col"
-            >
-              <div className={`flex-1 border-2 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden transition-colors duration-500 min-h-[300px] ${
-                result.suggestion === 'PUSH' || result.suggestion === 'ALL-IN' ? 'border-red-500/30 bg-red-500/5' : 
-                result.suggestion === 'FOLD' ? 'border-slate-800 bg-slate-900/20' : 
-                result.suggestion === 'RAISE' ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-emerald-500/30 bg-emerald-500/5'
-              }`}>
-                <div className={`absolute top-0 left-0 w-full h-1 ${
-                  result.suggestion === 'PUSH' || result.suggestion === 'ALL-IN' ? 'bg-red-500' :
-                  result.suggestion === 'FOLD' ? 'bg-slate-800' :
-                  result.suggestion === 'RAISE' ? 'bg-yellow-500' : 'bg-emerald-500'
-                }`}></div>
-                
-                <span className="text-[12px] uppercase tracking-[0.4em] font-bold mb-4 text-slate-500">Recomendação Estratégica</span>
-                
-                <h2 className="text-7xl md:text-[120px] leading-none font-black text-white italic tracking-tighter drop-shadow-2xl uppercase text-center">
-                  {result.suggestion}
-                </h2>
-
-                <div className="mt-8 md:mt-12 flex gap-8 md:gap-12 items-center">
-                  <div className="text-center group">
-                    <div className="text-4xl md:text-5xl font-mono font-black text-white tracking-tighter">{result.score.toFixed(1)}</div>
-                    <div className="text-[10px] uppercase text-slate-500 tracking-widest font-bold mt-1">Força</div>
-                  </div>
-                  <div className="w-[1px] h-12 bg-slate-800"></div>
-                  <div className="text-center group">
-                    <div className="text-4xl md:text-5xl font-mono font-black text-white tracking-tighter">{result.potOdds.toFixed(1)}%</div>
-                    <div className="text-[10px] uppercase text-slate-500 tracking-widest font-bold mt-1">Pot Odds</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="border-l-4 border-orange-400 pl-4 py-3 bg-slate-900/40 rounded-r">
-                  <h3 className="text-xs font-black text-orange-400 uppercase tracking-widest mb-1 flex items-center gap-2">
-                    <ShieldCheck className="w-3 h-3" /> JOGO IDENTIFICADO
-                  </h3>
-                  <p className="text-sm text-slate-400 font-medium leading-snug">
-                    {result.madeHand || 'Calculando...'}
-                  </p>
-                </div>
-                <div className="border-l-4 border-blue-400 pl-4 py-3 bg-slate-900/40 rounded-r">
-                  <h3 className="text-xs font-black text-blue-400 uppercase tracking-widest mb-1 flex items-center gap-2">
-                    <Zap className="w-3 h-3" /> NOTA ESTRATÉGICA
-                  </h3>
-                  <p className="text-sm text-slate-400 font-medium leading-snug">
-                    {result.reasoning}
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          </AnimatePresence>
-
-          <div className="mt-auto pt-6 flex justify-between items-center border-t border-slate-800">
-            <div className="flex gap-2">
-              <button 
-                onClick={() => { setHand(''); setFlop(''); setTurn(''); setRiver(''); setStreet('PRE'); setBetToCall(0); }}
-                className="w-10 h-10 rounded border border-slate-700 flex items-center justify-center text-[10px] font-mono hover:bg-slate-800 text-slate-500"
+            {result ? (
+              <motion.div
+                key={result.score + result.suggestion}
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.02 }}
+                className="flex-1 flex flex-col"
               >
-                ESC
-              </button>
-            </div>
+                <div className={`flex-1 border-2 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden transition-colors duration-500 min-h-[300px] ${
+                  result.suggestion.includes('PUSH') || result.suggestion.includes('ALL-IN') ? 'border-red-500/30 bg-red-500/5' : 
+                  result.suggestion === 'FOLD' ? 'border-slate-800 bg-slate-900/20' : 
+                  result.suggestion.includes('RAISE') ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-emerald-500/30 bg-emerald-500/5'
+                }`}>
+                  <div className={`absolute top-0 left-0 w-full h-1 ${
+                    result.suggestion.includes('PUSH') || result.suggestion.includes('ALL-IN') ? 'bg-red-500' :
+                    result.suggestion === 'FOLD' ? 'bg-slate-800' :
+                    result.suggestion.includes('RAISE') ? 'bg-yellow-500' : 'bg-emerald-500'
+                  }`}></div>
+                  
+                  <span className="text-[12px] uppercase tracking-[0.4em] font-bold mb-4 text-slate-500">Sugestão MTT IA</span>
+                  
+                  <h2 className="text-6xl md:text-8xl leading-none font-black text-white italic tracking-tighter drop-shadow-2xl uppercase text-center">
+                    {result.suggestion}
+                  </h2>
+  
+                  <div className="mt-8 flex gap-8 items-center">
+                    <div className="text-center">
+                      <div className="text-4xl font-mono font-black text-white tracking-tighter">{result.score.toFixed(1)}</div>
+                      <div className="text-[10px] uppercase text-slate-500 font-bold mt-1 tracking-widest">Score</div>
+                    </div>
+                    <div className="w-[1px] h-12 bg-slate-800"></div>
+                    <div className="text-center">
+                      <div className="text-4xl font-mono font-black text-white tracking-tighter">{result.potOdds.toFixed(1)}%</div>
+                      <div className="text-[10px] uppercase text-slate-500 font-bold mt-1 tracking-widest">Odds</div>
+                    </div>
+                  </div>
+                </div>
+  
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 bg-slate-900 border-l-4 border-orange-400 rounded-r">
+                    <h3 className="text-xs font-black text-orange-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                       <ShieldCheck className="w-3 h-3" /> ANÁLISE DE MÃO
+                    </h3>
+                    <p className="text-sm text-slate-400 font-medium">
+                      {result.madeHand} — {result.reasoning}
+                    </p>
+                    {villainProfile !== 'MEDIO' && (
+                      <div className="mt-2 text-[10px] font-bold text-slate-500 uppercase">
+                        Perfil: <span className={villainProfile === 'AGRESSIVO' ? 'text-emerald-500' : 'text-red-500'}>{villainProfile}</span>
+                        {villainProfile === 'AGRESSIVO' ? ' (Ajuste +1.5)' : ' (Ajuste -1.5)'}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="p-4 bg-slate-900 border-l-4 border-blue-500 rounded-r flex flex-col">
+                    <h3 className="text-xs font-black text-blue-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                       <Trophy className="w-3 h-3" /> HISTÓRICO & APRENDIZADO
+                    </h3>
+                    {result.history ? (
+                      <p className="text-sm text-slate-300 font-bold">
+                        Jogado {result.history.total}x | Vitória: {((result.history.wins / result.history.total) * 100).toFixed(0)}%
+                        <span className="block text-[10px] text-slate-500 font-normal mt-1 italic">Sistema ajustado para o seu perfil.</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500 italic">Nenhum dado prévio para esta mão nesta posição/fase.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 p-4 bg-slate-900/40 border border-slate-800 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="text-center md:text-left">
+                    <div className="text-xs font-black text-slate-400 uppercase tracking-widest">Você ganhou essa mão?</div>
+                    <div className="text-[10px] text-slate-600 uppercase">Input manual para alimentar a IA</div>
+                  </div>
+                  <div className="flex gap-2 w-full md:w-auto">
+                    <button 
+                      onClick={() => recordOutcome(true)}
+                      className="flex-1 md:flex-none px-6 py-2 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/50 text-emerald-400 hover:text-white rounded font-black text-[10px] transition-all"
+                    >
+                      SIM, GANHEI
+                    </button>
+                    <button 
+                      onClick={() => recordOutcome(false)}
+                      className="flex-1 md:flex-none px-6 py-2 bg-red-600/10 hover:bg-red-600 border border-red-500/50 text-red-400 hover:text-white rounded font-black text-[10px] transition-all"
+                    >
+                      NÃO, PERDI
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-700">
+                <Zap className="w-20 h-20 mb-6 opacity-10" />
+                <p className="text-sm animate-pulse tracking-[0.2em] uppercase font-bold">Aguardando definição da mão...</p>
+                <div className="mt-8 text-[10px] opacity-40 uppercase tracking-widest max-w-xs text-center leading-relaxed">
+                  Insira o formato da mão (ex: A9o ou Ah9s) e o assistente analisará o seu histórico de ganhos para sugerir o melhor move.
+                </div>
+              </div>
+            )}
+          </AnimatePresence>
+  
+          <div className="mt-auto pt-6 flex justify-between items-center border-t border-slate-800">
+            <button 
+              onClick={() => { setHand(''); setFlop(''); setTurn(''); setRiver(''); setStreet('PRE'); setBetToCall(0); }}
+              className="px-4 py-2 border border-slate-800 rounded text-[10px] font-black text-slate-600 hover:bg-slate-900 hover:text-slate-400 uppercase transition-all"
+            >
+              Resetar (ESC)
+            </button>
             <button 
               onClick={() => {
                 if (street === 'PRE') setStreet('FLOP');
@@ -452,19 +653,12 @@ export default function App() {
                 else setStreet('PRE');
                 setTimeout(() => inputRef.current?.focus(), 10);
               }}
-              className="bg-white text-black px-6 md:px-8 py-3 rounded font-black text-xs tracking-[0.2em] hover:bg-slate-200 uppercase transition-all"
+              className="bg-white text-black px-10 py-3 rounded-full font-black text-xs tracking-[0.2em] shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:scale-105 transition-all uppercase"
             >
               Próxima Rua
             </button>
           </div>
         </div>
-      </div>
-
-      <div className="h-1 bg-slate-900 flex shrink-0">
-        <div className={`transition-all duration-1000 ${result.suggestion === 'FOLD' ? 'w-full bg-slate-800' : 'w-1/4 bg-blue-500/30'}`}></div>
-        <div className="w-1/4 bg-slate-900"></div>
-        <div className="w-1/4 bg-green-500/30"></div>
-        <div className="w-1/4 bg-slate-900"></div>
       </div>
     </div>
   );
