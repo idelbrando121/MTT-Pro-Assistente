@@ -21,6 +21,7 @@ const GTO_RANGES_INTERNAL = {
   CO: ['aa', 'kk', 'qq', 'jj', 'tt', '99', '88', '77', 'aks', 'aqs', 'ajs', 'ats', 'a9s', 'ako', 'aqo', 'ajo', 'ato', 'kqs', 'kjs', 'kts', 'k9s', 'kqo', 'kjo', 'kto', 'qjs', 'qts', 'q9s', 'qjo', 'jts', 'j9s', 't9s', '98s'],
   BTN: ['aa', 'kk', 'qq', 'jj', 'tt', '99', '88', '77', '66', '55', '44', '33', '22', 'aks', 'aqs', 'ajs', 'ats', 'a9s', 'a8s', 'a7s', 'a6s', 'a5s', 'a4s', 'a3s', 'a2s', 'ako', 'aqo', 'ajo', 'ato', 'a9o', 'a8o', 'a7o', 'a6o', 'a5o', 'a4o', 'a3o', 'a2o', 'kqs', 'kjs', 'kts', 'k9s', 'k8s', 'k7s', 'k6s', 'k5s', 'k4s', 'k3s', 'k2s', 'kqo', 'kjo', 'kto', 'k9o', 'k8o', 'k7o', 'k6o', 'k5o', 'k4o', 'k3o', 'k2o', 'qjs', 'qts', 'q9s', 'q8s', 'q7s', 'q6s', 'q5s', 'qjo', 'qto', 'q9o', 'q8o', 'jts', 'j9s', 'j8s', 'j7s', 'jto', 't9s', 't8s', 't7s', 't9o', '98s', '97s', '98o', '87s', '86s', '76s', '75s', '65s', '54s', '43s'],
   SB: ['aa', 'kk', 'qq', 'jj', 'tt', '99', '88', '77', 'aks', 'aqs', 'ajs', 'ats', 'a9s', 'a8s', 'ako', 'aqo', 'ajo', 'ato', 'kqs', 'kjs', 'kts', 'kqo', 'kjo', 'qjs', 'qts', 'jts', 't9s', '98s', '87s'],
+  BB: ["22","33","44","55","66","77","88","99","tt","jj","qq","kk","aa","a2o","a3o","a4o","a5o","a6o","a7o","a8o","a9o","ato","ajo","aqo","ako","a2s","a3s","a4s","a5s","a6s","a7s","a8s","a9s","ats","ajs","aqs","aks","k2o","k3o","k4o","k5o","k6o","k7o","k8o","k9o","kto","kjo","kqo","k2s","k3s","k4s","k5s","k6s","k7s","k8s","k9s","kts","kjs","kqs","q8o","q9o","qto","qjo","q5s","q6s","q7s","q8s","q9s","qts","qjs","j8o","j9o","jto","j5s","j6s","j7s","j8s","j9s","jts","t8o","t9o","t6s","t7s","t8s","t9s","98o","96s","97s","98s","87s","85s","86s","76s","75s","65s","54s","53s","64s"],
   BB_DEFENSE: ["22","33","44","55","66","77","88","99","tt","jj","qq","kk","aa","a2o","a3o","a4o","a5o","a6o","a7o","a8o","a9o","ato","ajo","aqo","ako","a2s","a3s","a4s","a5s","a6s","a7s","a8s","a9s","ats","ajs","aqs","aks","k2o","k3o","k4o","k5o","k6o","k7o","k8o","k9o","kto","kjo","kqo","k2s","k3s","k4s","k5s","k6s","k7s","k8s","k9s","kts","kjs","kqs","q8o","q9o","qto","qjo","q5s","q6s","q7s","q8s","q9s","qts","qjs","j8o","j9o","jto","j5s","j6s","j7s","j8s","j9s","jts","t8o","t9o","t6s","t7s","t8s","t9s","98o","96s","97s","98s","87s","85s","86s","76s","75s","65s","54s","53s","64s"],
   BB_3BET_VALUE: ["aa", "kk", "qq", "jj", "tt", "aks", "ako", "aqs"],
   BB_3BET_BLUFF: ["a2o", "a3o", "a4o", "a5o", "k4o", "k5o", "k6o", "k7o", "t7o", "86s", "75s"]
@@ -225,168 +226,162 @@ const evaluateMTT = (
   villainProfile: VillainProfile,
   playersInPot: number
 ): EvaluationResult => {
-  const { score: baseScore, description: madeHand } = evaluateHand(hand, board);
-  let score = baseScore;
-  const potOdds = call > 0 ? (call / (pot + call)) * 100 : 0;
-  const posIndex = POSITIONS.indexOf(pos);
+  try {
+    const { score: baseScore, description: madeHand } = evaluateHand(hand, board);
+    let score = baseScore;
+    const potOdds = call > 0 ? (call / (pot + call)) * 100 : 0;
+    const posIndex = POSITIONS.indexOf(pos);
 
-  // --- Ajuste por Jogadores no Pote ---
-  if (playersInPot === 1) score += 1.0;
-  else if (playersInPot === 3) score -= 0.5;
-  else if (playersInPot === 4) score -= 1.0;
-  else if (playersInPot >= 5) score -= 1.5;
+    // --- Ajuste por Jogadores no Pote ---
+    if (playersInPot === 1) score += 1.0;
+    else if (playersInPot === 3) score -= 0.5;
+    else if (playersInPot === 4) score -= 1.0;
+    else if (playersInPot >= 5) score -= 1.5;
 
-  // --- Perfil do Vilão ---
-  if (villainProfile === 'AGRESSIVO') score += 1.5;
-  if (villainProfile === 'TIGHT') score -= 1.5;
+    // --- Perfil do Vilão ---
+    if (villainProfile === 'AGRESSIVO') score += 1.5;
+    if (villainProfile === 'TIGHT') score -= 1.5;
 
-  // --- Lógica do Vilão ---
-  if (villainAction !== 'NONE') {
-    if (villainAction === 'FOLD') {
-      score += 0.5; // Vilão foldou, mesa mais limpa
-    } else if (villainAction === 'CALL') {
-      // Score base mantido
-    } else if (villainAction === 'RAISE') {
-      // Posição ruim do vilão (EP/MP) = Range muito forte
-      if (villainPos === 'EP' || villainPos === 'MP') {
-        score -= 1.2;
-      } else {
-        score -= 0.6;
-      }
-    } else if (villainAction === 'ALL-IN') {
-      score -= 2.5; 
-    }
-  }
-
-  // Chave de aprendizado simplificada (ignora detalhes de naipes para agrupar melhor os dados)
-  const handKey = hand.toLowerCase().replace(/[eocp]/g, 'x'); 
-  const stackType = stack < 15 ? 'SHORT' : stack < 40 ? 'MEDIUM' : 'DEEP';
-  const learningKey = `${handKey}:${pos}:${stackType}:${phase}`;
-  const history = learningData[learningKey];
-
-  // Ajuste do sistema baseado no aprendizado (mínimo 5 mãos para confiar)
-  if (history && history.total >= 5) {
-    const winRate = history.wins / history.total;
-    if (winRate >= 0.60) score += 1.5; // Usuário ganha muito com essa mão aqui -> seja mais agressivo
-    if (winRate <= 0.40) score -= 1.5; // Usuário perde muito -> seja mais conservador
-  }
-  
-  if (board === '') {
-    const h = hand.toLowerCase().replace(/[^a-z0-9]/g, '');
-    let category: 'EP' | 'MP' | 'CO' | 'BTN' | 'SB' | 'BB' = 'EP';
-    if (['UTG', 'UTG+1', 'UTG+2'].includes(pos)) category = 'EP';
-    else if (['LJ', 'HJ'].includes(pos)) category = 'MP';
-    else if (pos === 'CO') category = 'CO';
-    else if (pos === 'BTN') category = 'BTN';
-    else if (pos === 'SB') category = 'SB';
-    else category = 'BB';
-
-    // BB Defense Logic
-    if (category === 'BB' && villainAction === 'RAISE' && ['CO', 'BTN', 'SB'].includes(villainPos)) {
-      const hKey = h.length === 2 ? h : h; // Already normalized
-      const isValue3Bet = GTO_RANGES_INTERNAL.BB_3BET_VALUE.includes(h);
-      const isBluff3Bet = GTO_RANGES_INTERNAL.BB_3BET_BLUFF.includes(h);
-      const isDefensiveCall = GTO_RANGES_INTERNAL.BB_DEFENSE.includes(h);
-
-      if (isValue3Bet) {
-        return { score: 10, suggestion: 'RAISE (3-BET Value)', potOdds, reasoning: 'GTO: 3-Bet por valor no Big Blind contra steal.', madeHand: 'Mão Premium (Value)' };
-      } else if (isBluff3Bet) {
-        return { score: 8.5, suggestion: 'RAISE (3-BET Bluff)', potOdds, reasoning: 'GTO: 3-Bet light (bluff) para punir steal ranges largos.', madeHand: 'Exploração de Fold Equity' };
-      } else if (isDefensiveCall) {
-        return { score: 7.5, suggestion: 'CALL', potOdds, reasoning: 'GTO: Defesa obrigatória no BB contra steal raise (odds favoráveis).', madeHand: 'Defesa de Blind' };
-      } else {
-        return { score: 2.0, suggestion: 'FOLD', potOdds, reasoning: 'GTO: Mão fraca demais mesmo para as odds do BB.', madeHand: 'Fold Marginal' };
+    // --- Lógica do Vilão ---
+    if (villainAction !== 'NONE') {
+      if (villainAction === 'FOLD') {
+        score += 0.5;
+      } else if (villainAction === 'CALL') {
+        // Nada
+      } else if (villainAction === 'RAISE') {
+        if (villainPos === 'EP' || villainPos === 'MP') score -= 1.2;
+        else score -= 0.6;
+      } else if (villainAction === 'ALL-IN') {
+        score -= 2.5; 
       }
     }
 
-    // Default Opening Logic (No previous raise or everyone folded)
-    const posJustification: Record<string, string> = {
-      EP: 'Posição inicial exige mãos premium.',
-      MP: 'Range mais amplo que EP, mas ainda seletivo.',
-      CO: 'Posição tardia permite range significativamente mais amplo.',
-      BTN: 'Melhor posição da mesa. Range muito amplo.',
-      SB: 'Posição desfavorável, exige mãos com bom potencial pós-flop.',
-      BB: 'Big Blind: Defenda ou ataque dependendo da ação.'
-    };
+    const handKey = (hand || '').toLowerCase().replace(/[eocp]/g, 'x'); 
+    const stackType = stack < 15 ? 'SHORT' : stack < 40 ? 'MEDIUM' : 'DEEP';
+    const learningKey = `${handKey}:${pos}:${stackType}:${phase}`;
+    const history = learningData[learningKey];
 
-    if (villainAction === 'NONE' || villainAction === 'FOLD' || (category === 'BB' && villainAction === 'CALL')) {
-      const range = GTO_RANGES_INTERNAL[category];
-      if (range.includes(h)) {
-        const raiseSizeTxt = (stack > 50 || category === 'EP') ? ' (3x)' : ' (2.2x)';
-        return { score: 8.5, suggestion: ('RAISE' + raiseSizeTxt) as Action, potOdds, reasoning: `GTO: ${posJustification[category]}`, madeHand: 'Range de Abertura' };
-      } else {
-        return { score: 2.0, suggestion: 'FOLD', potOdds, reasoning: `GTO: Mão fora do range para ${category}. ${posJustification[category]}`, madeHand: 'Fold' };
-      }
+    if (history && history.total >= 5) {
+      const winRate = history.wins / history.total;
+      if (winRate >= 0.60) score += 1.5;
+      if (winRate <= 0.40) score -= 1.5;
     }
     
-    // Fallback if someone else raised and we are NOT in BB
-    if (villainAction === 'RAISE' || villainAction === 'ALL-IN') {
-      const isPremium = ['aa', 'kk', 'qq', 'jj', 'tt', 'aks', 'ako', 'aqs'].includes(h);
-      if (isPremium) {
-        return { score: 9.5, suggestion: (stack < 25 ? 'ALL-IN' : 'RAISE (3-BET)') as Action, potOdds, reasoning: 'GTO: Contra agressão, mantenha-se nos topos de range.', madeHand: 'Mão Premium' };
-      }
-      return { score: 1.5, suggestion: 'FOLD', potOdds, reasoning: 'GTO: Evite jogar potes grandes fora de posição ou com mãos dominadas.', madeHand: 'Fold Seguro' };
-    }
-  }
+    if (board === '') {
+      const h = hand.toLowerCase().replace(/[^a-z0-9]/g, '');
+      let category: 'EP' | 'MP' | 'CO' | 'BTN' | 'SB' | 'BB' = 'EP';
+      if (['UTG', 'UTG+1', 'UTG+2'].includes(pos)) category = 'EP';
+      else if (['LJ', 'HJ'].includes(pos)) category = 'MP';
+      else if (pos === 'CO') category = 'CO';
+      else if (pos === 'BTN') category = 'BTN';
+      else if (pos === 'SB') category = 'SB';
+      else category = 'BB';
 
-  let suggestion: Action = 'FOLD';
-  let reasoning = '';
-  let raiseSize = '';
-
-  if (board !== '') {
-    if (villainAction === 'ALL-IN' && score < 9.0) {
-      suggestion = 'FOLD';
-      reasoning = 'Arriscado demais contra All-in com mão sem nuts.';
-    } else if (score >= 8.5) {
-      suggestion = 'ALL-IN';
-      reasoning = 'Mão extremamente forte. Extrair valor máximo.';
-    } else if (score >= 6.5) {
-      if (villainAction === 'RAISE' && score < 7.5) {
-        suggestion = 'FOLD';
-        reasoning = 'Mão marginal contra agressão pós-flop.';
-      } else if (potOdds < 30) {
-        suggestion = 'RAISE';
-        raiseSize = ' (2.5x)';
-        reasoning = 'Semi-bluff ou valor fino. Pressão no oponente.';
-      } else {
-        suggestion = 'CALL';
-        reasoning = 'Odds favoráveis para ver a próxima carta.';
+      if (category === 'BB' && villainAction === 'RAISE' && ['CO', 'BTN', 'SB'].includes(villainPos)) {
+        if (GTO_RANGES_INTERNAL.BB_3BET_VALUE.includes(h)) {
+          return { score: 10, suggestion: 'RAISE (3-BET Value)', potOdds, reasoning: 'GTO: 3-Bet por valor no Big Blind contra steal.', madeHand: 'Mão Premium (Value)' };
+        } else if (GTO_RANGES_INTERNAL.BB_3BET_BLUFF.includes(h)) {
+          return { score: 8.5, suggestion: 'RAISE (3-BET Bluff)', potOdds, reasoning: 'GTO: 3-Bet light punitivo contra steal ranges largos.', madeHand: 'Exploração de Fold Equity' };
+        } else if (GTO_RANGES_INTERNAL.BB_DEFENSE.includes(h)) {
+          return { score: 7.5, suggestion: 'CALL', potOdds, reasoning: 'GTO: Defesa obrigatória no BB contra steal raise.', madeHand: 'Defesa de Blind' };
+        }
       }
-    } else if (score >= 4.5) {
+
+      const posJustification: Record<string, string> = {
+        EP: 'Posição inicial exige mãos premium.',
+        MP: 'Range mais amplo que EP, mas ainda seletivo.',
+        CO: 'Posição tardia permite range significativamente mais amplo.',
+        BTN: 'Melhor posição da mesa. Range muito amplo.',
+        SB: 'Posição desfavorável, exige mãos com bom potencial pós-flop.',
+        BB: 'Big Blind: Defenda ou ataque dependendo da ação.'
+      };
+
+      if (villainAction === 'NONE' || villainAction === 'FOLD' || (category === 'BB' && villainAction === 'CALL')) {
+        const range = (GTO_RANGES_INTERNAL as any)[category] || [];
+        if (range.includes(h)) {
+          const raiseSizeTxt = (stack > 50 || category === 'EP') ? ' (3x)' : ' (2.2x)';
+          return { score: 8.5, suggestion: ('RAISE' + raiseSizeTxt) as Action, potOdds, reasoning: `GTO: ${posJustification[category] || 'Posição favorável.'}`, madeHand: 'Range de Abertura' };
+        } else {
+          return { score: 2.0, suggestion: 'FOLD', potOdds, reasoning: `GTO: Fora do range para ${category}. ${posJustification[category] || ''}`, madeHand: 'Fold' };
+        }
+      }
+      
       if (villainAction === 'RAISE' || villainAction === 'ALL-IN') {
-        suggestion = 'FOLD';
-        reasoning = 'Mão fraca para enfrentar aumento.';
-      } else {
-        suggestion = potOdds < 25 ? 'CALL' : 'FOLD';
-        reasoning = suggestion === 'CALL' ? 'Call barato por odds.' : 'Fold. Mão sem potencial.';
+        const isPremium = ['aa', 'kk', 'qq', 'jj', 'tt', 'aks', 'ako', 'aqs'].includes(h);
+        if (isPremium) {
+          return { score: 9.5, suggestion: (stack < 25 ? 'ALL-IN' : 'RAISE (3-BET)') as Action, potOdds, reasoning: 'GTO: Contra agressão, mantenha-se nos topos de range.', madeHand: 'Mão Premium' };
+        }
+        return { score: 1.5, suggestion: 'FOLD', potOdds, reasoning: 'GTO: Evite jogar potes grandes sem mão premium ou posição.', madeHand: 'Fold Seguro' };
       }
-    } else {
-      suggestion = 'FOLD';
-      reasoning = 'Lixo total. Não jogue fichas fora.';
     }
+
+    let suggestion: Action = 'FOLD';
+    let reasoningText = '';
+    let raiseSizeTerm = '';
+
+    if (board !== '') {
+      if (villainAction === 'ALL-IN' && score < 9.0) {
+        suggestion = 'FOLD';
+        reasoningText = 'Arriscado demais contra All-in.';
+      } else if (score >= 8.5) {
+        suggestion = 'ALL-IN';
+        reasoningText = 'Mão extremamente forte. Extrair valor.';
+      } else if (score >= 6.5) {
+        if (villainAction === 'RAISE' && score < 7.5) {
+          suggestion = 'FOLD';
+        } else if (potOdds < 30) {
+          suggestion = 'RAISE';
+          raiseSizeTerm = ' (2.5x)';
+          reasoningText = 'Pressão no oponente com mão forte.';
+        } else {
+          suggestion = 'CALL';
+          reasoningText = 'Call por odds favoráveis.';
+        }
+      } else if (score >= 4.5) {
+        if (villainAction === 'RAISE' || villainAction === 'ALL-IN') {
+          suggestion = 'FOLD';
+        } else {
+          suggestion = potOdds < 25 ? 'CALL' : 'FOLD';
+          reasoningText = suggestion === 'CALL' ? 'Call barato.' : 'Mão sem potencial.';
+        }
+      }
+    }
+
+    const posReasoningRaw: Record<string, string> = {
+      'UTG': 'UTG (12%): Conservador.',
+      'UTG+1': 'UTG+1 (12%).',
+      'UTG+2': 'UTG+2 (12%).',
+      'LJ': 'LJ (14%).',
+      'HJ': 'HJ (18%).',
+      'CO': 'CO (28%): Atacar.',
+      'BTN': 'BTN (45%): Roubo agressivo.',
+      'SB': 'SB (35%): Amplo.',
+      'BB': 'BB: Defesa.'
+    };
+
+    const finalRes = board === '' 
+      ? (posReasoningRaw[pos] || 'Análise pré-flop.') 
+      : reasoningText || `Score Pós-Flop: ${score.toFixed(1)}`;
+
+    return { 
+      score: isNaN(score) ? 0 : Math.min(10, Math.max(0, score)), 
+      suggestion: (suggestion + raiseSizeTerm) as Action, 
+      potOdds: isNaN(potOdds) ? 0 : potOdds, 
+      reasoning: finalRes,
+      madeHand,
+      history,
+      scoreBase: isNaN(score) ? 0 : score
+    };
+  } catch (err) {
+    console.error("Evaluation error:", err);
+    return {
+      score: 5.0,
+      suggestion: 'FOLD',
+      potOdds: 0,
+      reasoning: 'Erro na análise. Recomendado cautela.',
+      madeHand: 'Erro de Dados'
+    };
   }
-
-  const posReasoning = {
-    'UTG': 'UTG (12%): Conservador.',
-    'UTG+1': 'UTG+1 (12%).',
-    'UTG+2': 'UTG+2 (12%).',
-    'LJ': 'LJ (14%).',
-    'HJ': 'HJ (18%).',
-    'CO': 'CO (28%): Atacar.',
-    'BTN': 'BTN (45%): Roubo agressivo.',
-    'SB': 'SB (35%): Amplo, mas Cuidado.',
-    'BB': 'BB: Defesa.'
-  };
-
-  return { 
-    score: Math.min(10, Math.max(0, score)), 
-    suggestion: (suggestion + raiseSize) as Action, 
-    potOdds, 
-    reasoning: board === '' ? posReasoning[pos] : `Score Pós-Flop: ${score.toFixed(1)} | Odds: ${potOdds.toFixed(1)}%`,
-    madeHand,
-    history,
-    scoreBase: score // Pass score to UI if needed
-  };
 };
 
 export default function App() {
