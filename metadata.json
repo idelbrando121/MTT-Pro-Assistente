@@ -1,0 +1,8 @@
+{
+  "name": "MTT Pro Assistant",
+  "description": "High-speed 9-max MTT poker assistant with real-time strategic adjustments for stack depth, position, and tournament phase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
