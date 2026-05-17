@@ -284,6 +284,33 @@ export default function App() {
     return evaluateMTT(hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile);
   }, [hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile]);
 
+  const canContinue = useMemo(() => {
+    if (street === 'PRE') return hand.length >= 2;
+    if (street === 'FLOP') return flop.trim().split(' ').length >= 3;
+    if (street === 'TURN') return turn.length >= 2;
+    if (street === 'RIVER') return river.length >= 2;
+    return false;
+  }, [street, hand, flop, turn, river]);
+
+  const handleNextStreet = () => {
+    if (!canContinue) return;
+    if (street === 'PRE') setStreet('FLOP');
+    else if (street === 'FLOP') setStreet('TURN');
+    else if (street === 'TURN') setStreet('RIVER');
+    setTimeout(() => inputRef.current?.focus(), 10);
+  };
+
+  const handleFold = () => {
+    setHand('');
+    setFlop('');
+    setTurn('');
+    setRiver('');
+    setStreet('PRE');
+    setBetToCall(0);
+    setVillainAction('NONE');
+    setVillainPos('NONE');
+  };
+
   const recordOutcome = (won: boolean) => {
     if (!hand) return;
     const handKey = hand.toLowerCase().replace(/[eocp]/g, 'x'); 
@@ -310,17 +337,16 @@ export default function App() {
         inputRef.current?.focus();
       }
       if (e.key === 'Escape') {
-        setHand('');
-        setFlop('');
-        setTurn('');
-        setRiver('');
-        setBetToCall(0);
-        setStreet('PRE');
+        handleFold();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  const nextStreetLabel = street === 'PRE' ? 'CONTINUAR PARA O FLOP?' : 
+                          street === 'FLOP' ? 'CONTINUAR PARA O TURN?' : 
+                          street === 'TURN' ? 'CONTINUAR PARA O RIVER?' : '';
 
   return (
     <div className="h-screen w-full bg-slate-950 text-slate-200 font-sans flex flex-col overflow-hidden select-none">
@@ -352,29 +378,40 @@ export default function App() {
         <div className="w-full md:w-[400px] border-b md:border-b-0 md:border-r border-slate-800 p-6 flex flex-col gap-6 bg-slate-900/20 overflow-y-auto">
           
           <div className="flex gap-1 p-1 bg-slate-950 rounded border border-slate-800">
-            {(['PRE', 'FLOP', 'TURN', 'RIVER'] as Street[]).map(s => (
-              <button 
-                key={s}
-                onClick={() => setStreet(s)}
-                className={`flex-1 py-3 text-[10px] font-bold rounded uppercase transition-colors ${street === s ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-900'}`}
-              >
-                {s}
-              </button>
-            ))}
+            {(['PRE', 'FLOP', 'TURN', 'RIVER'] as Street[]).map(s => {
+              const isActive = street === s;
+              const isLocked = (s === 'FLOP' && !hand) || 
+                               (s === 'TURN' && (!hand || !flop)) || 
+                               (s === 'RIVER' && (!hand || !flop || !turn));
+              return (
+                <button 
+                  key={s}
+                  onClick={() => !isLocked && setStreet(s)}
+                  disabled={isLocked}
+                  className={`flex-1 py-3 text-[10px] font-bold rounded uppercase transition-colors ${isActive ? 'bg-blue-600 text-white' : isLocked ? 'text-slate-800 cursor-not-allowed' : 'text-slate-500 hover:bg-slate-900'}`}
+                >
+                  {s}
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex flex-col gap-4">
             {street === 'PRE' && (
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-                  Mão (Ex: AhKs, 99, 72o)
+                  Digite sua mão (Ex: AKs, AKo, TT, 72o)
                   <span className="block text-[8px] opacity-40">Naipe: o=ouro, e=espada, c=copa, p=paus</span>
                 </label>
                 <input
                   ref={inputRef}
                   type="text"
                   value={hand}
-                  onChange={(e) => setHand(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.toLowerCase() === 'desistir') handleFold();
+                    else setHand(val);
+                  }}
                   className="bg-slate-800 border-2 border-slate-700 text-4xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
                   placeholder="---"
                 />
@@ -384,14 +421,18 @@ export default function App() {
             {street === 'FLOP' && (
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-                  Flop (Ex: As 7o 2c)
+                  Digite as 3 cartas do flop (Ex: A 7 2)
                   <span className="block text-[8px] opacity-40">Espaçado. Ex: Ad 7h 2c</span>
                 </label>
                 <input
                   ref={inputRef}
                   type="text"
                   value={flop}
-                  onChange={(e) => setFlop(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.toLowerCase() === 'desistir') handleFold();
+                    else setFlop(val);
+                  }}
                   className="bg-slate-800 border-2 border-slate-700 text-3xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
                   placeholder="--- --- ---"
                 />
@@ -400,12 +441,16 @@ export default function App() {
 
             {street === 'TURN' && (
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Turn (4ª carta)</label>
+                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Digite a 4ª carta do turn</label>
                 <input
                   ref={inputRef}
                   type="text"
                   value={turn}
-                  onChange={(e) => setTurn(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.toLowerCase() === 'desistir') handleFold();
+                    else setTurn(val);
+                  }}
                   className="bg-slate-800 border-2 border-slate-700 text-3xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
                   placeholder="---"
                 />
@@ -414,12 +459,16 @@ export default function App() {
 
             {street === 'RIVER' && (
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">River (5ª carta)</label>
+                <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Digite a 5ª carta do river</label>
                 <input
                   ref={inputRef}
                   type="text"
                   value={river}
-                  onChange={(e) => setRiver(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.toLowerCase() === 'desistir') handleFold();
+                    else setRiver(val);
+                  }}
                   className="bg-slate-800 border-2 border-slate-700 text-3xl p-4 font-mono font-bold text-white text-center focus:border-blue-500 outline-none rounded-lg uppercase"
                   placeholder="---"
                 />
@@ -429,7 +478,7 @@ export default function App() {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Pote (BB)</label>
+              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Valor do Pote (BB)</label>
               <input
                 type="number"
                 value={pot}
@@ -438,7 +487,7 @@ export default function App() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Inves. (BB)</label>
+              <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Valor da Aposta (BB)</label>
               <input
                 type="number"
                 value={betToCall}
@@ -449,7 +498,7 @@ export default function App() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Posição</label>
+            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Sua Posição</label>
             <div className="grid grid-cols-3 gap-1">
               {POSITIONS.map((p) => (
                 <button
@@ -626,13 +675,37 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+
+                {canContinue && street !== 'RIVER' && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-6 p-6 bg-blue-600/10 border-2 border-blue-500/30 rounded-2xl flex flex-col items-center gap-4"
+                  >
+                    <div className="text-sm font-black text-blue-400 uppercase tracking-[0.2em]">{nextStreetLabel}</div>
+                    <div className="flex gap-4 w-full max-w-xs">
+                       <button 
+                         onClick={handleNextStreet}
+                         className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-full font-black text-xs uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]"
+                       >
+                         SIM (Seguir)
+                       </button>
+                       <button 
+                         onClick={handleFold}
+                         className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-400 py-3 rounded-full font-black text-xs uppercase tracking-widest transition-all"
+                       >
+                         NÃO (Desistir)
+                       </button>
+                    </div>
+                  </motion.div>
+                )}
               </motion.div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-slate-700">
                 <Zap className="w-20 h-20 mb-6 opacity-10" />
-                <p className="text-sm animate-pulse tracking-[0.2em] uppercase font-bold">Aguardando definição da mão...</p>
+                <p className="text-sm animate-pulse tracking-[0.2em] uppercase font-bold">Inicie pelo PRÉ-FLOP...</p>
                 <div className="mt-8 text-[10px] opacity-40 uppercase tracking-widest max-w-xs text-center leading-relaxed">
-                  Insira o formato da mão (ex: A9o ou Ah9s) e o assistente analisará o seu histórico de ganhos para sugerir o melhor move.
+                  Digite sua mão, posição e perfil do vilão para começar. O fluxo seguirá obrigatoriamente do pré-flop ao river.
                 </div>
               </div>
             )}
@@ -640,20 +713,19 @@ export default function App() {
   
           <div className="mt-auto pt-6 flex justify-between items-center border-t border-slate-800">
             <button 
-              onClick={() => { setHand(''); setFlop(''); setTurn(''); setRiver(''); setStreet('PRE'); setBetToCall(0); }}
-              className="px-4 py-2 border border-slate-800 rounded text-[10px] font-black text-slate-600 hover:bg-slate-900 hover:text-slate-400 uppercase transition-all"
+              onClick={handleFold}
+              className="px-4 py-2 border border-slate-800 rounded text-[10px] font-black text-red-500/70 hover:bg-red-500 hover:text-white hover:border-red-500 uppercase transition-all"
             >
-              Resetar (ESC)
+              Desistir / Resetar
             </button>
             <button 
-              onClick={() => {
-                if (street === 'PRE') setStreet('FLOP');
-                else if (street === 'FLOP') setStreet('TURN');
-                else if (street === 'TURN') setStreet('RIVER');
-                else setStreet('PRE');
-                setTimeout(() => inputRef.current?.focus(), 10);
-              }}
-              className="bg-white text-black px-10 py-3 rounded-full font-black text-xs tracking-[0.2em] shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:scale-105 transition-all uppercase"
+              onClick={handleNextStreet}
+              disabled={!canContinue || street === 'RIVER'}
+              className={`px-10 py-3 rounded-full font-black text-xs tracking-[0.2em] transition-all uppercase ${
+                canContinue && street !== 'RIVER' 
+                  ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:scale-105' 
+                  : 'bg-slate-800 text-slate-600 cursor-not-allowed'
+              }`}
             >
               Próxima Rua
             </button>
