@@ -48,6 +48,9 @@ interface EvaluationResult {
   madeHand: string;
   history?: HandHistory;
   scoreBase?: number;
+  spr?: number;
+  proTip?: string;
+  texture?: 'DRY' | 'WET' | 'NEUTRAL';
 }
 
 const POSITIONS: Position[] = ['UTG', 'UTG+1', 'UTG+2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
@@ -61,7 +64,7 @@ const PHASES = [
 
 // --- Poker Logic Helpers ---
 
-const evaluateHand = (handStr: string, boardStr: string): { score: number, description: string } => {
+const evaluateHand = (handStr: string, boardStr: string): { score: number, description: string, texture?: 'DRY' | 'WET' | 'NEUTRAL' } => {
   const normalize = (c: string) => {
     if (!c || c.length < 2) return c;
     let r = '';
@@ -182,6 +185,12 @@ const evaluateHand = (handStr: string, boardStr: string): { score: number, descr
     }
   }
 
+  // Texture Analysis
+  let texture: 'DRY' | 'WET' | 'NEUTRAL' = 'NEUTRAL';
+  const highCards = rankValues.filter(v => v >= 10).length;
+  if (isFlushDraw || maxConsecutive >= 3 || highCards >= 2) texture = 'WET';
+  else if (maxCount === 1 && maxConsecutive < 3) texture = 'DRY';
+
   let finalScore = 3.0;
   let finalDesc = 'Carta Alta';
 
@@ -193,23 +202,28 @@ const evaluateHand = (handStr: string, boardStr: string): { score: number, descr
   else if (pairCount >= 2) { finalScore = 7.3; finalDesc = 'Dois Pares'; }
   else if (pairCount === 1) { finalScore = 5.8; finalDesc = 'Um Par'; }
 
-  // Draw adjustments
+  // Draw adjustments (Pro Level)
   if (!isFlush) {
-    if (isFlushDraw) {
-      finalScore += 1.5;
+    if (isFlushDraw && maxConsecutive === 4) {
+      finalScore += 2.5; // Monster Draw
+      finalDesc += ' + COMBO DRAW (Flush + Seq)';
+    } else if (isFlushDraw) {
+      finalScore += 1.8;
       finalDesc += ' + Flush Draw';
     } else if (isBackdoor) {
-      finalScore += 0.5;
-      finalDesc += ' + Backdoor Flush';
+      finalScore += 0.6;
+      finalDesc += ' + Bckdr Flush';
     }
   }
 
   if (maxConsecutive === 4 && finalScore < 8.0) {
-    finalScore += 1.2;
+    finalScore += 1.4;
     if (!finalDesc.includes('Draw')) finalDesc += ' + Seq Aberta';
+  } else if (maxConsecutive === 3 && texture === 'WET') {
+    finalScore += 0.4; // Gutshot logic simplified
   }
 
-  return { score: finalScore, description: finalDesc };
+  return { score: finalScore, description: finalDesc, texture };
 };
 
 const evaluateMTT = (
@@ -227,46 +241,33 @@ const evaluateMTT = (
   playersInPot: number
 ): EvaluationResult => {
   try {
-    const { score: baseScore, description: madeHand } = evaluateHand(hand, board);
+    const { score: baseScore, description: madeHand, texture } = evaluateHand(hand, board);
     let score = baseScore;
     const potOdds = call > 0 ? (call / (pot + call)) * 100 : 0;
-    const posIndex = POSITIONS.indexOf(pos);
+    const spr = board !== '' ? stack / pot : undefined;
+    
+    // Elite Tactical Rule: SPR (Stack to Pot Ratio)
+    let tacticalAdvice = "";
+    if (spr !== undefined) {
+      if (spr < 3) tacticalAdvice = "Comprometido com o pote (Low SPR). Prepare-se para o All-in.";
+      else if (spr > 10) tacticalAdvice = "Pote profundo. Controle o range e evite over-commit.";
+      else tacticalAdvice = "SPR Médio. Manobras táticas padrão.";
+    }
 
-    // --- Ajuste por Jogadores no Pote ---
-    if (playersInPot === 1) score += 1.0;
-    else if (playersInPot === 3) score -= 0.5;
-    else if (playersInPot === 4) score -= 1.0;
-    else if (playersInPot >= 5) score -= 1.5;
-
-    // --- Perfil do Vilão ---
-    if (villainProfile === 'AGRESSIVO') score += 1.5;
-    if (villainProfile === 'TIGHT') score -= 1.5;
-
-    // --- Lógica do Vilão ---
-    if (villainAction !== 'NONE') {
-      if (villainAction === 'FOLD') {
-        score += 0.5;
-      } else if (villainAction === 'CALL') {
-        // Nada
-      } else if (villainAction === 'RAISE') {
-        if (villainPos === 'EP' || villainPos === 'MP') score -= 1.2;
-        else score -= 0.6;
-      } else if (villainAction === 'ALL-IN') {
-        score -= 2.5; 
-      }
+    // --- Perfil do Vilão (Exploitative Pro Play) ---
+    let villainReasoning = "";
+    if (villainProfile === 'AGRESSIVO') {
+      score += 1.2;
+      villainReasoning = "Vilão agressivo abre ranges, podemos punir com calls mais largos ou re-raises.";
+    } else if (villainProfile === 'TIGHT') {
+      score -= 1.8;
+      villainReasoning = "Vilão tight só joga o topo do range. Respeite muita força aqui.";
     }
 
     const handKey = (hand || '').toLowerCase().replace(/[eocp]/g, 'x'); 
-    const stackType = stack < 15 ? 'SHORT' : stack < 40 ? 'MEDIUM' : 'DEEP';
-    const learningKey = `${handKey}:${pos}:${stackType}:${phase}`;
-    const history = learningData[learningKey];
+    const stackType = stack < 20 ? 'SHORT' : stack < 50 ? 'MEDIUM' : 'DEEP';
+    const history = learningData[`${handKey}:${pos}:${stackType}:${phase}`];
 
-    if (history && history.total >= 5) {
-      const winRate = history.wins / history.total;
-      if (winRate >= 0.60) score += 1.5;
-      if (winRate <= 0.40) score -= 1.5;
-    }
-    
     if (board === '') {
       const h = hand.toLowerCase().replace(/[^a-z0-9]/g, '');
       let category: 'EP' | 'MP' | 'CO' | 'BTN' | 'SB' | 'BB' = 'EP';
@@ -279,98 +280,65 @@ const evaluateMTT = (
 
       if (category === 'BB' && villainAction === 'RAISE' && ['CO', 'BTN', 'SB'].includes(villainPos)) {
         if (GTO_RANGES_INTERNAL.BB_3BET_VALUE.includes(h)) {
-          return { score: 10, suggestion: 'RAISE (3-BET Value)', potOdds, reasoning: 'GTO: 3-Bet por valor no Big Blind contra steal.', madeHand: 'Mão Premium (Value)' };
+          return { score: 10, suggestion: 'RAISE (3-BET Value)', potOdds, spr, texture, reasoning: 'GTO Pro: 3-Bet obrigatória por valor para polarizar o vilão.', madeHand: 'Premium Value', proTip: "Contra vilões que abrem muito no BTN, aumente o tamanho do seu 3-bet." };
         } else if (GTO_RANGES_INTERNAL.BB_3BET_BLUFF.includes(h)) {
-          return { score: 8.5, suggestion: 'RAISE (3-BET Bluff)', potOdds, reasoning: 'GTO: 3-Bet light punitivo contra steal ranges largos.', madeHand: 'Exploração de Fold Equity' };
+          return { score: 8.5, suggestion: 'RAISE (3-BET Bluff)', potOdds, spr, texture, reasoning: 'Elite Bluff: Use blockers de Ax/Kx para forçar o fold no BTN.', madeHand: 'Semi-Bluff / Blocker', proTip: "Se o vilão der call, jogue de forma agressiva em boards secos." };
         } else if (GTO_RANGES_INTERNAL.BB_DEFENSE.includes(h)) {
-          return { score: 7.5, suggestion: 'CALL', potOdds, reasoning: 'GTO: Defesa obrigatória no BB contra steal raise.', madeHand: 'Defesa de Blind' };
+          return { score: 7.5, suggestion: 'CALL', potOdds, spr, texture, reasoning: 'Defense GTO: As odds do BB exigem call com quase qualquer mão conectada.', madeHand: 'Defesa Matemática', proTip: "Check-fold em boards onde você não acertar nada. Não force a barra." };
         }
       }
 
-      const posJustification: Record<string, string> = {
-        EP: 'Posição inicial exige mãos premium.',
-        MP: 'Range mais amplo que EP, mas ainda seletivo.',
-        CO: 'Posição tardia permite range significativamente mais amplo.',
-        BTN: 'Melhor posição da mesa. Range muito amplo.',
-        SB: 'Posição desfavorável, exige mãos com bom potencial pós-flop.',
-        BB: 'Big Blind: Defenda ou ataque dependendo da ação.'
-      };
-
-      if (villainAction === 'NONE' || villainAction === 'FOLD' || (category === 'BB' && villainAction === 'CALL')) {
-        const range = (GTO_RANGES_INTERNAL as any)[category] || [];
-        if (range.includes(h)) {
-          const raiseSizeTxt = (stack > 50 || category === 'EP') ? ' (3x)' : ' (2.2x)';
-          return { score: 8.5, suggestion: ('RAISE' + raiseSizeTxt) as Action, potOdds, reasoning: `GTO: ${posJustification[category] || 'Posição favorável.'}`, madeHand: 'Range de Abertura' };
-        } else {
-          return { score: 2.0, suggestion: 'FOLD', potOdds, reasoning: `GTO: Fora do range para ${category}. ${posJustification[category] || ''}`, madeHand: 'Fold' };
-        }
-      }
-      
-      if (villainAction === 'RAISE' || villainAction === 'ALL-IN') {
-        const isPremium = ['aa', 'kk', 'qq', 'jj', 'tt', 'aks', 'ako', 'aqs'].includes(h);
-        if (isPremium) {
-          return { score: 9.5, suggestion: (stack < 25 ? 'ALL-IN' : 'RAISE (3-BET)') as Action, potOdds, reasoning: 'GTO: Contra agressão, mantenha-se nos topos de range.', madeHand: 'Mão Premium' };
-        }
-        return { score: 1.5, suggestion: 'FOLD', potOdds, reasoning: 'GTO: Evite jogar potes grandes sem mão premium ou posição.', madeHand: 'Fold Seguro' };
+      const range = (GTO_RANGES_INTERNAL as any)[category] || [];
+      if (range.includes(h)) {
+        const raiseSizeTxt = stack < 20 ? ' (ALL-IN)' : (stack > 60 ? ' (2.5x)' : ' (2.2x)');
+        return { score: 8.5, suggestion: ('RAISE' + raiseSizeTxt) as Action, potOdds, spr, texture, reasoning: `Pro Open: Posição ${category} permite atacar blinds.`, madeHand: 'Range de Elite', proTip: `Se houver vilões agressivos à esquerda, diminua o range de abertura de ${category}.` };
+      } else {
+        return { score: 2.0, suggestion: 'FOLD', potOdds, spr, texture, reasoning: `Safe Play: Mão muito fraca para manter o lucro no longo prazo em ${category}.`, madeHand: 'Fold Disciplinado', proTip: "Paciência é a maior virtude de um campeão de MTT." };
       }
     }
 
     let suggestion: Action = 'FOLD';
-    let reasoningText = '';
-    let raiseSizeTerm = '';
+    let proTip = "Foque na leitura do oponente. O poker é um jogo de pessoas usando cartas.";
+    let finalReasoning = "";
 
     if (board !== '') {
       if (villainAction === 'ALL-IN' && score < 9.0) {
         suggestion = 'FOLD';
-        reasoningText = 'Arriscado demais contra All-in.';
+        finalReasoning = "Sobrevivência Profissional: Não jogue o torneio fora em um coinflip duvidoso.";
+        proTip = "Em torneios, preservar stack é mais importante do que ganhar potes marginais.";
       } else if (score >= 8.5) {
         suggestion = 'ALL-IN';
-        reasoningText = 'Mão extremamente forte. Extrair valor.';
+        finalReasoning = "Value Max: Você está no topo do range. Extraia cada ficha possível.";
+        proTip = "Não dê slowplay em boards 'Wet'. Cobrar caro de draws é o padrão pro.";
       } else if (score >= 6.5) {
-        if (villainAction === 'RAISE' && score < 7.5) {
-          suggestion = 'FOLD';
-        } else if (potOdds < 30) {
-          suggestion = 'RAISE';
-          raiseSizeTerm = ' (2.5x)';
-          reasoningText = 'Pressão no oponente com mão forte.';
+        if (texture === 'WET' && villainAction === 'RAISE' && score < 7.5) {
+            suggestion = 'FOLD';
+            finalReasoning = "Proteção de Equity: Board perigoso demais para pagar raises com mãos médias.";
+        } else if (spr !== undefined && spr < 3) {
+            suggestion = 'ALL-IN';
+            finalReasoning = "Commitment: Com baixo SPR e uma mão digna, o único caminho é empurrar.";
         } else {
+            suggestion = potOdds < 30 ? 'CALL' : 'RAISE';
+            finalReasoning = suggestion === 'CALL' ? 'Pot Control: Mantendo o pote pequeno com mão de valor médio.' : 'Agosto Tático: Colocando pressão no range do vilão.';
+        }
+      } else if (score >= 4.5 && texture === 'DRY') {
           suggestion = 'CALL';
-          reasoningText = 'Call por odds favoráveis.';
-        }
-      } else if (score >= 4.5) {
-        if (villainAction === 'RAISE' || villainAction === 'ALL-IN') {
-          suggestion = 'FOLD';
-        } else {
-          suggestion = potOdds < 25 ? 'CALL' : 'FOLD';
-          reasoningText = suggestion === 'CALL' ? 'Call barato.' : 'Mão sem potencial.';
-        }
+          finalReasoning = "Floating Pro: Pagando no board seco para tentar levar o pote no turn.";
+          proTip = "Boards como A-7-2 seco são ótimos para testar a força do vilão com um call.";
       }
     }
 
-    const posReasoningRaw: Record<string, string> = {
-      'UTG': 'UTG (12%): Conservador.',
-      'UTG+1': 'UTG+1 (12%).',
-      'UTG+2': 'UTG+2 (12%).',
-      'LJ': 'LJ (14%).',
-      'HJ': 'HJ (18%).',
-      'CO': 'CO (28%): Atacar.',
-      'BTN': 'BTN (45%): Roubo agressivo.',
-      'SB': 'SB (35%): Amplo.',
-      'BB': 'BB: Defesa.'
-    };
-
-    const finalRes = board === '' 
-      ? (posReasoningRaw[pos] || 'Análise pré-flop.') 
-      : reasoningText || `Score Pós-Flop: ${score.toFixed(1)}`;
-
     return { 
       score: isNaN(score) ? 0 : Math.min(10, Math.max(0, score)), 
-      suggestion: (suggestion + raiseSizeTerm) as Action, 
+      suggestion: suggestion as Action, 
       potOdds: isNaN(potOdds) ? 0 : potOdds, 
-      reasoning: finalRes,
+      reasoning: finalReasoning || tacticalAdvice || villainReasoning || "Análise Completa.",
       madeHand,
       history,
-      scoreBase: isNaN(score) ? 0 : score
+      scoreBase: score,
+      spr,
+      proTip,
+      texture
     };
   } catch (err) {
     console.error("Evaluation error:", err);
@@ -755,6 +723,18 @@ export default function App() {
                   result.suggestion === 'FOLD' ? 'border-slate-800 bg-slate-900/20' : 
                   result.suggestion.includes('RAISE') ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-emerald-500/30 bg-emerald-500/5'
                 }`}>
+                  {result.texture && (
+                    <div className="absolute top-4 right-4 flex items-center gap-2">
+                       <span className={`px-2 py-1 text-[8px] font-black rounded border ${
+                         result.texture === 'WET' ? 'bg-red-900/20 border-red-500/50 text-red-400' :
+                         result.texture === 'DRY' ? 'bg-emerald-900/20 border-emerald-500/50 text-emerald-400' :
+                         'bg-slate-800 border-slate-700 text-slate-400'
+                       }`}>
+                         BOARD: {result.texture}
+                       </span>
+                    </div>
+                  )}
+
                   <div className={`absolute top-0 left-0 w-full h-1 ${
                     result.suggestion.includes('PUSH') || result.suggestion.includes('ALL-IN') ? 'bg-red-500' :
                     result.suggestion === 'FOLD' ? 'bg-slate-800' :
@@ -772,6 +752,15 @@ export default function App() {
                       <div className="text-4xl font-mono font-black text-white tracking-tighter">{result.score.toFixed(1)}</div>
                       <div className="text-[10px] uppercase text-slate-500 font-bold mt-1 tracking-widest">Score</div>
                     </div>
+                    {result.spr !== undefined && (
+                      <>
+                        <div className="w-[1px] h-12 bg-slate-800"></div>
+                        <div className="text-center">
+                          <div className="text-4xl font-mono font-black text-white tracking-tighter">{result.spr.toFixed(1)}</div>
+                          <div className="text-[10px] uppercase text-slate-500 font-bold mt-1 tracking-widest">SPR</div>
+                        </div>
+                      </>
+                    )}
                     <div className="w-[1px] h-12 bg-slate-800"></div>
                     <div className="text-center">
                       <div className="text-4xl font-mono font-black text-white tracking-tighter">{result.potOdds.toFixed(1)}%</div>
@@ -783,17 +772,20 @@ export default function App() {
                 <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-4 bg-slate-900 border-l-4 border-orange-400 rounded-r">
                     <h3 className="text-xs font-black text-orange-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                       <ShieldCheck className="w-3 h-3" /> ANÁLISE DE MÃO
+                       <ShieldCheck className="w-3 h-3" /> ESTRATÉGIA PROFISSIONAL
                     </h3>
-                    <p className="text-sm text-slate-400 font-medium">
-                      {result.madeHand} — {result.reasoning}
+                    <p className="text-sm text-slate-300 font-bold mb-2">
+                       {result.madeHand}
                     </p>
-                    {villainProfile !== 'MEDIO' && (
-                      <div className="mt-2 text-[10px] font-bold text-slate-500 uppercase">
-                        Perfil: <span className={villainProfile === 'AGRESSIVO' ? 'text-emerald-500' : 'text-red-500'}>{villainProfile}</span>
-                        {villainProfile === 'AGRESSIVO' ? ' (Ajuste +1.5)' : ' (Ajuste -1.5)'}
-                      </div>
-                    )}
+                    <p className="text-xs text-slate-400 leading-relaxed italic">
+                      "{result.reasoning}"
+                    </p>
+                    <div className="mt-3 p-2 bg-black/40 rounded border border-white/5">
+                       <div className="text-[8px] uppercase text-blue-400 font-black tracking-widest mb-1 italic">Mindset de Campeão</div>
+                       <p className="text-[10px] text-blue-200 leading-tight">
+                         {result.proTip}
+                       </p>
+                    </div>
                   </div>
                   
                   <div className="p-4 bg-slate-900 border-l-4 border-blue-500 rounded-r flex flex-col">
