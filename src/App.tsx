@@ -352,6 +352,224 @@ const evaluateMTT = (
   }
 };
 
+const PRESET_SCENARIOS = [
+  {
+    name: "🚀 Steal do BTN (KQo)",
+    hand: "KQo",
+    pos: "BTN" as Position,
+    stack: 35,
+    phase: 2 as Phase,
+    pot: 1.5,
+    betToCall: 0,
+    flop: "",
+    turn: "",
+    river: "",
+    street: "PRE" as Street,
+    villainPos: "NONE" as VillainPosition,
+    villainAction: "NONE" as VillainAction,
+    villainProfile: "MEDIO" as VillainProfile,
+    playersInPot: 1,
+    title: "Abertura Padrão"
+  },
+  {
+    name: "🛡️ Defesa de BB (87s)",
+    hand: "8s 7s",
+    pos: "BB" as Position,
+    stack: 45,
+    phase: 2 as Phase,
+    pot: 5.5,
+    betToCall: 2.2,
+    flop: "",
+    turn: "",
+    river: "",
+    street: "PRE" as Street,
+    villainPos: "BTN" as VillainPosition,
+    villainAction: "RAISE" as VillainAction,
+    villainProfile: "AGRESSIVO" as VillainProfile,
+    playersInPot: 2,
+    title: "Defesa de Blind vs BTN"
+  },
+  {
+    name: "🔥 Combo Draw no Flop",
+    hand: "Js Ts",
+    pos: "CO" as Position,
+    stack: 50,
+    phase: 2 as Phase,
+    pot: 7.5,
+    betToCall: 5.0,
+    flop: "Ks Qs 4d",
+    turn: "",
+    river: "",
+    street: "FLOP" as Street,
+    villainPos: "BB" as VillainPosition,
+    villainAction: "RAISE" as VillainAction,
+    villainProfile: "AGRESSIVO" as VillainProfile,
+    playersInPot: 2,
+    title: "Par + Flush + Straight Draw"
+  },
+  {
+    name: "☠️ Bolha Shove (A5s)",
+    hand: "As 5s",
+    pos: "SB" as Position,
+    stack: 14,
+    phase: 3 as Phase,
+    pot: 2.0,
+    betToCall: 0,
+    flop: "",
+    turn: "",
+    river: "",
+    street: "PRE" as Street,
+    villainPos: "NONE" as VillainPosition,
+    villainAction: "NONE" as VillainAction,
+    villainProfile: "TIGHT" as VillainProfile,
+    playersInPot: 1,
+    title: "Pressão de Stack Curto"
+  },
+  {
+    name: "🌟 Trinca vs Aggro",
+    hand: "4s 4h",
+    pos: "UTG" as Position,
+    stack: 65,
+    phase: 2 as Phase,
+    pot: 12.0,
+    betToCall: 8.0,
+    flop: "Ac 4d 9s", 
+    turn: "",
+    river: "",
+    street: "FLOP" as Street,
+    villainPos: "BTN" as VillainPosition,
+    villainAction: "RAISE" as VillainAction,
+    villainProfile: "AGRESSIVO" as VillainProfile,
+    playersInPot: 2,
+    title: "Slowplay vs Agressor"
+  },
+  {
+    name: "🏆 Final: Call no River",
+    hand: "Qh Jh",
+    pos: "BB" as Position,
+    stack: 28,
+    phase: 5 as Phase,
+    pot: 24.0,
+    betToCall: 12.0,
+    flop: "Qd 8c 2s",
+    turn: "5h",
+    river: "Ad",
+    street: "RIVER" as Street,
+    villainPos: "CO" as VillainPosition,
+    villainAction: "RAISE" as VillainAction,
+    villainProfile: "AGRESSIVO" as VillainProfile,
+    playersInPot: 2,
+    title: "Decisão de Torneio"
+  }
+];
+
+const generateRandomScenario = (posOption?: Position) => {
+  const streets: Street[] = ['PRE', 'FLOP', 'TURN', 'RIVER'];
+  const chosenStreet = streets[Math.floor(Math.random() * streets.length)];
+  const positions: Position[] = ['UTG', 'UTG+1', 'UTG+2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
+  const chosenPos = posOption || positions[Math.floor(Math.random() * positions.length)];
+  const chosenPhase = (1 + Math.floor(Math.random() * 5)) as Phase;
+  const chosenProfile = (['AGRESSIVO', 'MEDIO', 'TIGHT'][Math.floor(Math.random() * 3)]) as VillainProfile;
+  const chosenStack = Math.floor(10 + Math.random() * 110); 
+  
+  let chosenHand = "";
+  let chosenFlop = "";
+  let chosenTurn = "";
+  let chosenRiver = "";
+  
+  if (chosenStreet === 'PRE') {
+    const preflopHands = [
+      "AA", "KK", "QQ", "JJ", "TT", "99", "88", "A5s", "A8s", "AJs", "ATs", "KQs", "QJs", "JTs", "T9s", "98s", "87s", "76s", "65s", "54s",
+      "AKo", "AQo", "AJo", "ATo", "KQo", "KJo", "QJo", "JTo"
+    ];
+    chosenHand = preflopHands[Math.floor(Math.random() * preflopHands.length)];
+  } else {
+    const styles = ['FLUSH_DRAW', 'STRAIGHT_DRAW', 'SET', 'DRY_ACE', 'TWO_PAIR'];
+    const style = styles[Math.floor(Math.random() * styles.length)];
+    
+    if (style === 'FLUSH_DRAW') {
+      chosenHand = "As Ks";
+      chosenFlop = "Qs 8s 2d";
+      chosenTurn = chosenStreet === 'TURN' || chosenStreet === 'RIVER' ? "Th" : "";
+      chosenRiver = chosenStreet === 'RIVER' ? "5s" : "";
+    } else if (style === 'STRAIGHT_DRAW') {
+      chosenHand = "Jh Th";
+      chosenFlop = "Qd 9c 2s";
+      chosenTurn = chosenStreet === 'TURN' || chosenStreet === 'RIVER' ? "8h" : "";
+      chosenRiver = chosenStreet === 'RIVER' ? "Ad" : "";
+    } else if (style === 'SET') {
+      chosenHand = "7s 7h";
+      chosenFlop = "Ac 7d 2s";
+      chosenTurn = chosenStreet === 'TURN' || chosenStreet === 'RIVER' ? "Kd" : "";
+      chosenRiver = chosenStreet === 'RIVER' ? "Qc" : "";
+    } else if (style === 'TWO_PAIR') {
+      chosenHand = "Kc Tc";
+      chosenFlop = "Ks Th 4d";
+      chosenTurn = chosenStreet === 'TURN' || chosenStreet === 'RIVER' ? "2s" : "";
+      chosenRiver = chosenStreet === 'RIVER' ? "Jd" : "";
+    } else { 
+      chosenHand = "Ad Kd";
+      chosenFlop = "8c 5s 2d";
+      chosenTurn = chosenStreet === 'TURN' || chosenStreet === 'RIVER' ? "Jh" : "";
+      chosenRiver = chosenStreet === 'RIVER' ? "Qc" : "";
+    }
+  }
+  
+  let chosenPot = 1.5;
+  let chosenBet = 0;
+  let chosenVillainAct: VillainAction = 'NONE';
+  let chosenVillainPos: VillainPosition = 'NONE';
+  let chosenPlayers = 1;
+
+  if (chosenStreet === 'PRE') {
+    const preflopScenarios = [
+      { pot: 1.5, bet: 0, vAct: 'NONE' as VillainAction, vPos: 'NONE' as VillainPosition, players: 1 },
+      { pot: 5.5, bet: 2.2, vAct: 'RAISE' as VillainAction, vPos: 'CO' as VillainPosition, players: 2 },
+      { pot: 3.0, bet: 1.0, vAct: 'CALL' as VillainAction, vPos: 'LJ' as VillainPosition, players: 2 },
+      { pot: 18.0, bet: 8.5, vAct: 'RAISE' as VillainAction, vPos: 'BTN' as VillainPosition, players: 2 },
+    ];
+    const sc = preflopScenarios[Math.floor(Math.random() * preflopScenarios.length)];
+    chosenPot = sc.pot;
+    chosenBet = sc.bet;
+    chosenVillainAct = sc.vAct;
+    chosenVillainPos = sc.vPos;
+    chosenPlayers = sc.players;
+  } else {
+    const mult = chosenStreet === 'FLOP' ? 1.0 : chosenStreet === 'TURN' ? 2.0 : 3.5;
+    chosenPot = Math.floor((10 + Math.random() * 15) * mult);
+    chosenBet = Math.random() > 0.5 ? Math.floor(chosenPot * (0.3 + Math.random() * 0.4)) : 0;
+    chosenVillainAct = chosenBet > 0 ? (Math.random() > 0.82 ? 'ALL-IN' : 'RAISE') : 'NONE';
+    chosenPlayers = Math.random() > 0.7 ? 3 : 2;
+  }
+  
+  if (chosenVillainAct !== 'NONE') {
+    const otherPositions: VillainPosition[] = ['EP', 'MP', 'CO', 'BTN', 'SB', 'BB'];
+    chosenVillainPos = otherPositions[Math.floor(Math.random() * otherPositions.length)];
+    if (chosenVillainPos === chosenPos) {
+      chosenVillainPos = chosenPos === 'BB' ? 'BTN' : 'BB';
+    }
+  } else {
+    chosenVillainPos = 'NONE';
+  }
+
+  return {
+    hand: chosenHand,
+    pos: chosenPos,
+    stack: chosenStack,
+    phase: chosenPhase,
+    pot: chosenPot,
+    betToCall: chosenBet,
+    flop: chosenFlop,
+    turn: chosenTurn,
+    river: chosenRiver,
+    street: chosenStreet,
+    villainPos: chosenVillainPos,
+    villainAction: chosenVillainAct,
+    villainProfile: chosenProfile,
+    playersInPot: chosenPlayers
+  };
+};
+
 export default function App() {
   const [hand, setHand] = useState('');
   const [pos, setPos] = useState<Position>('UTG');
@@ -374,6 +592,28 @@ export default function App() {
   });
   
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleApplyScenario = (sc: any) => {
+    setHand(sc.hand);
+    setPos(sc.pos);
+    setStack(sc.stack);
+    setPhase(sc.phase);
+    setPot(sc.pot);
+    setBetToCall(sc.betToCall);
+    setFlop(sc.flop);
+    setTurn(sc.turn);
+    setRiver(sc.river);
+    setStreet(sc.street);
+    setVillainPos(sc.villainPos);
+    setVillainAction(sc.villainAction);
+    setVillainProfile(sc.villainProfile);
+    setPlayersInPot(sc.playersInPot);
+  };
+
+  const handleRandomScenario = () => {
+    const sc = generateRandomScenario();
+    handleApplyScenario(sc);
+  };
 
   const fullBoard = [flop, turn, river].filter(Boolean).join(' ');
 
@@ -475,6 +715,47 @@ export default function App() {
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         <div className="w-full md:w-[400px] border-b md:border-b-0 md:border-r border-slate-800 p-6 flex flex-col gap-6 bg-slate-900/20 overflow-y-auto">
           
+          {/* MODO SIMULADOR AUTOMÁTICO */}
+          <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-xl flex flex-col gap-3 shadow-inner">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-black uppercase tracking-widest text-[#f1f5f9]">Mesa Automática / Simulador</span>
+              </div>
+              <span className="px-1.5 py-0.5 text-[8px] font-black bg-emerald-500/15 text-emerald-400 rounded border border-emerald-500/30 animate-pulse">PRO_LIVE</span>
+            </div>
+            
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              Deixe a IA tomar decisões automáticas. Clique no botão abaixo para gerar uma mão/cenário de torneio real aleatório instantaneamente!
+            </p>
+
+            <button
+              id="btn-gerar-cenario-aleatorio"
+              onClick={handleRandomScenario}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-3 rounded-lg flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(16,185,129,0.35)] hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 fill-white text-white animate-bounce" />
+              GERAR CENÁRIO ALEATÓRIO 🎰
+            </button>
+
+            <div className="mt-1">
+              <div className="text-[8px] uppercase tracking-widest font-black text-slate-500 mb-1.5">Aulas Práticas GTO / Casos Reais:</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {PRESET_SCENARIOS.map((sc, idx) => (
+                  <button
+                    key={idx}
+                    id={`btn-preset-scenario-${idx}`}
+                    onClick={() => handleApplyScenario(sc)}
+                    className="p-2 text-left bg-slate-950/40 hover:bg-slate-900/80 border border-slate-800/60 rounded hover:border-slate-700 transition-all text-[9.5px] font-bold text-slate-300 flex flex-col gap-0.5"
+                  >
+                    <span className="text-white truncate">{sc.name}</span>
+                    <span className="text-[7.5px] text-slate-500 uppercase">{sc.title}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="flex gap-1 p-1 bg-slate-950 rounded border border-slate-800">
             {(['PRE', 'FLOP', 'TURN', 'RIVER'] as Street[]).map(s => {
               const isActive = street === s;
