@@ -931,84 +931,20 @@ export default function App() {
                        ))}
                     </div>
                  </div>
-                <div className="flex flex-col items-end">
-                   <span className="text-[8px] uppercase tracking-tighter text-slate-500 font-bold">Média do Torneio</span>
-                   <div className="text-sm font-mono font-black text-blue-400">
-                      {Math.floor(stack * 1.2)} BB
-                   </div>
-                </div>
-             </div>
-          </div>
+                 <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                       <span className="text-[8px] uppercase tracking-tighter text-slate-500 font-bold">Seu Stack</span>
+                       <span className="text-sm font-mono font-black text-white">{stack} BB</span>
+                    </div>
+                    <input 
+                      type="range" min="2" max="150" value={stack}
+                      onChange={(e) => setStack(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500"
+                    />
+                 </div>
+              </div>
+           </div>
 
-          {/* PAINEL DE CONTROLE DE SIMULAÇÃO */}
-          <div className="flex flex-col gap-5 p-5 bg-slate-950/60 border border-slate-800/80 rounded-2xl shadow-xl">
-             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                   <Settings2 className="w-4 h-4 text-blue-400" />
-                   <span className="text-[11px] font-black uppercase tracking-widest text-slate-300">Configuração da Mesa</span>
-                </div>
-                <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${stack < 20 ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
-                   {stack < 20 ? 'Stack Curto' : 'Deep Stack'}
-                </div>
-             </div>
-
-             {/* Stack Slider - RE-INTRODUCED */}
-             <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-end">
-                   <label className="text-[9px] uppercase tracking-widest text-slate-500 font-black">Seu Stack (Big Blinds)</label>
-                   <span className="text-xl font-mono font-black text-white">{stack} BB</span>
-                </div>
-                <input 
-                  type="range" min="2" max="150" value={stack}
-                  onChange={(e) => setStack(parseInt(e.target.value))}
-                  className="w-full accent-blue-600 h-2 bg-slate-800 rounded-full appearance-none cursor-pointer hover:accent-blue-500 transition-all"
-                />
-                <div className="flex justify-between text-[8px] font-black text-slate-600 uppercase">
-                   <span>Push/Fold (Short)</span>
-                   <span>Deep Stack</span>
-                </div>
-             </div>
-
-             {/* Tactical HUD (Real-time Feedback) */}
-             <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="flex flex-col gap-1.5 p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
-                   <label className="text-[8px] uppercase tracking-widest text-slate-500 font-black">Inteligência M-Ratio</label>
-                   <div className="flex items-center justify-between">
-                      <span className={`text-sm font-mono font-black ${result?.mRatio && result.mRatio < 5 ? 'text-red-500' : 'text-emerald-500'}`}>
-                        M = {result?.mRatio?.toFixed(1) || '0.0'}
-                      </span>
-                      <Shield className={`w-3 h-3 ${result?.mRatio && result.mRatio < 10 ? 'text-orange-500' : 'text-emerald-500'}`} />
-                   </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5 p-3 bg-slate-900/80 border border-slate-800 rounded-xl">
-                   <label className="text-[8px] uppercase tracking-widest text-slate-500 font-black">Fase / Pressão ICM</label>
-                   <div className="flex items-center justify-between">
-                      <span className="text-sm font-mono font-black text-blue-400">{phase >= 4 ? 'ALTA' : 'NORMAL'}</span>
-                      <TrendingUp className="w-3 h-3 text-slate-600" />
-                   </div>
-                </div>
-             </div>
-
-             {/* Quick Position Selector */}
-             <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center">
-                   <label className="text-[9px] uppercase tracking-widest text-slate-500 font-black">Sua Posição (Mesa 9-Max)</label>
-                   <span className="text-[8px] font-black text-blue-400 bg-blue-500/10 px-1 rounded border border-blue-500/20">FULL RING</span>
-                </div>
-                <div className="grid grid-cols-3 gap-1">
-                  {POSITIONS.map(p => (
-                    <button 
-                      key={p} 
-                      onClick={() => setPos(p)}
-                      className={`py-2 text-[9px] font-black rounded border transition-all ${pos === p ? 'bg-blue-600 border-blue-400 text-white shadow-lg' : 'bg-slate-900/50 border-slate-800 text-slate-500 hover:border-slate-600'}`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-             </div>
-          </div>
 
           <div className="flex gap-1 p-1 bg-slate-950 rounded border border-slate-800">
             {(['PRE', 'FLOP', 'TURN', 'RIVER'] as Street[]).map(s => {
@@ -1167,13 +1103,13 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                   <label className="text-[9px] uppercase text-slate-500 font-black">Ação</label>
-                   <div className="grid grid-cols-2 gap-1">
-                     {(['FOLD', 'RAISE', 'ALL-IN', 'NONE'] as VillainAction[]).map(va => (
+                   <label className="text-[9px] uppercase text-slate-500 font-black">Ação do Vilão</label>
+                   <div className="grid grid-cols-2 gap-1.5">
+                     {(['FOLD', 'CALL', 'RAISE', 'ALL-IN', 'NONE'] as VillainAction[]).map(va => (
                        <button 
                         key={va}
                         onClick={() => setVillainAction(va)}
-                        className={`py-1.5 text-[9px] font-black rounded border transition-all ${villainAction === va ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-slate-700'}`}
+                        className={`py-2 text-[9px] font-black rounded border transition-all ${villainAction === va ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-slate-700'}`}
                        >
                          {va === 'NONE' ? 'CHECK' : va}
                        </button>
@@ -1182,24 +1118,7 @@ export default function App() {
                 </div>
              </div>
 
-             <div className="flex flex-col gap-2">
-                <label className="text-[9px] uppercase text-slate-500 font-black">Modelo de Perfil</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { id: 'AGRESSIVO', label: 'AGR', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 active:bg-emerald-500 active:text-white' },
-                    { id: 'MEDIO', label: 'STD', color: 'bg-slate-800/50 text-slate-400 border-slate-700 active:bg-slate-700 active:text-white' },
-                    { id: 'TIGHT', label: 'TGT', color: 'bg-red-500/10 text-red-400 border-red-500/20 active:bg-red-500 active:text-white' }
-                  ].map(p => (
-                    <button 
-                      key={p.id}
-                      onClick={() => setVillainProfile(p.id as VillainProfile)}
-                      className={`py-2 text-[10px] font-black rounded-lg border transition-all ${villainProfile === p.id ? p.color.replace('bg-opacity-10', 'bg-opacity-100') + ' border-current shadow-lg' : 'bg-slate-900 border-slate-800 text-slate-600'}`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-             </div>
+
           </div>
 
           {/* NEURAL TRAINING LAB */}
