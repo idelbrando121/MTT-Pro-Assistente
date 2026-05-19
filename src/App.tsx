@@ -634,46 +634,43 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [isTraining, setIsTraining] = useState(false);
+  const [selectionMode, setSelectionMode] = useState<'HERO' | 'VILLAIN'>('HERO');
   const [trainingHands, setTrainingHands] = useState(0);
   const [trainingConfidence, setTrainingConfidence] = useState(0.85);
 
   const startMassiveTraining = () => {
+    if (isTraining) return;
+    
     try {
-      console.log("NEURAL CORE: Starting self-play simulation (5M hands)...");
-      if (isTraining) return;
+      console.log("%c[NEURAL ENGINE] Initializing calibration process...", "color: #818cf8; font-weight: bold");
       
       setIsTraining(true);
       setTrainingHands(0);
       
-      let currentHands = 0;
       const TARGET = 5000000;
-      const BATCH_SIZE = 250000;
+      const STEP = 250000;
+      let current = 0;
 
-      const runBatch = () => {
-        try {
-          currentHands += BATCH_SIZE;
+      // Use a slightly longer initial delay to ensure UI renders
+      setTimeout(() => {
+        const interval = setInterval(() => {
+          current += STEP;
           
-          if (currentHands >= TARGET) {
+          if (current >= TARGET) {
             setTrainingHands(TARGET);
-            setTimeout(() => {
-              setIsTraining(false);
-              setTrainingConfidence(1.0);
-              console.log("Neural Training Complete: Confidence 100%");
-            }, 1000);
+            setTrainingConfidence(1.0);
+            setIsTraining(false);
+            clearInterval(interval);
+            console.log("%c[NEURAL ENGINE] Calibration successful: 5.0M samples processed.", "color: #10b981; font-weight: bold");
             return;
           }
+          
+          setTrainingHands(current);
+        }, 60);
+      }, 100);
 
-          setTrainingHands(currentHands);
-          requestAnimationFrame(runBatch);
-        } catch (err) {
-          console.error("Error in training batch:", err);
-          setIsTraining(false);
-        }
-      };
-
-      setTimeout(runBatch, 100); 
     } catch (err) {
-      console.error("Error starting training:", err);
+      console.error("FATAL NEURAL ERROR:", err);
       setIsTraining(false);
     }
   };
@@ -845,52 +842,95 @@ export default function App() {
              </div>
              
              {/* Visual Table Radar */}
-             <div className="relative w-full h-32 bg-slate-950/50 rounded-lg border border-slate-800/50 flex items-center justify-center overflow-hidden">
+             <div className="relative w-full h-52 bg-slate-950/80 rounded-lg border border-slate-800/50 flex flex-col items-center justify-center overflow-hidden">
                 <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.3)_0%,transparent_70%)]" />
                 
+                <div className="absolute top-2 left-2 z-10 flex gap-1">
+                   <button 
+                     onClick={() => setSelectionMode('HERO')}
+                     className={`px-2 py-1 text-[7px] font-black rounded border transition-all ${selectionMode === 'HERO' ? 'bg-blue-600 border-blue-400 text-white shadow-lg' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                   >
+                     SET HERO
+                   </button>
+                   <button 
+                     onClick={() => setSelectionMode('VILLAIN')}
+                     className={`px-2 py-1 text-[7px] font-black rounded border transition-all ${selectionMode === 'VILLAIN' ? 'bg-red-600 border-red-400 text-white shadow-lg' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                   >
+                     SET VILÃO
+                   </button>
+                </div>
+
                 {/* 9-Max Orbit */}
-                <div className="relative w-48 h-20 border-2 border-slate-800 rounded-full flex items-center justify-center">
-                   <div className="text-[8px] font-black text-slate-700 uppercase tracking-widest">9-MAX MTT</div>
+                <div className="relative w-56 h-32 border-2 border-slate-800/50 rounded-[50%] flex items-center justify-center bg-slate-900/20 translate-y-2">
+                   <div className="flex flex-col items-center">
+                      <div className="text-[7px] font-black text-blue-500/30 uppercase tracking-[0.4em]">MTT CIRCUIT</div>
+                      <div className="text-[9px] font-mono font-black text-white/10 uppercase">Holographic HUD</div>
+                   </div>
                    
                    {/* Seats */}
                    {POSITIONS.map((p, i) => {
                       const angle = (i / POSITIONS.length) * 2 * Math.PI - Math.PI / 2;
-                      const x = Math.cos(angle) * 28;
-                      const y = Math.sin(angle) * 12;
+                      const x = Math.cos(angle) * 32;
+                      const y = Math.sin(angle) * 18;
                       const isUser = pos === p;
                       const isVillain = villainPos === p;
                       
                       return (
                          <div 
                            key={p}
-                           className="absolute flex flex-col items-center gap-0.5"
+                           className="absolute flex flex-col items-center gap-0.5 group"
                            style={{ 
                               transform: `translate(${x*4}px, ${y*4}px)`
                            }}
                          >
-                            <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[6px] font-black transition-all ${
-                               isUser ? 'bg-blue-600 border-blue-400 text-white scale-125 shadow-[0_0_8px_rgba(37,99,235,0.6)]' :
-                               isVillain ? 'bg-red-600 border-red-400 text-white scale-125 animate-pulse' :
-                               'bg-slate-900 border-slate-700 text-slate-500'
+                            <button 
+                              onClick={() => {
+                                 if (selectionMode === 'HERO') {
+                                    setPos(p);
+                                    if (villainPos === p) setVillainPos('NONE');
+                                    setSelectionMode('VILLAIN'); // Auto-switch for workflow
+                                 } else {
+                                    setVillainPos(p as VillainPosition);
+                                    if (pos === p) setPos('BTN'); // Move Hero if sharing same seat
+                                    if (villainAction === 'NONE') setVillainAction('RAISE');
+                                 }
+                              }}
+                              className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-[9px] font-black transition-all cursor-pointer ${
+                               isUser ? 'bg-blue-600 border-blue-300 text-white scale-125 shadow-[0_0_15px_rgba(37,99,235,0.8)] z-20' :
+                               isVillain ? 'bg-red-600 border-red-300 text-white scale-125 animate-pulse z-20' :
+                               'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300'
                             }`}>
-                               {p === 'UTG+1' ? 'U1' : p === 'UTG+2' ? 'U2' : p[0]}
-                            </div>
-                            <span className={`text-[5px] font-black uppercase tracking-tighter ${isUser ? 'text-blue-400' : isVillain ? 'text-red-400' : 'text-slate-600'}`}>
+                               {p === 'UTG+1' ? 'U1' : p === 'UTG+2' ? 'U2' : p === 'UTG' ? 'UT' : p[0] + (p[1] || '')}
+                            </button>
+                            <span className={`text-[6px] font-black uppercase tracking-tighter ${isUser ? 'text-blue-400' : isVillain ? 'text-red-400' : 'text-slate-600 group-hover:text-slate-400'}`}>
                                {p}
                             </span>
                          </div>
                       );
                    })}
                 </div>
+                
+                <p className="absolute bottom-2 text-[6px] text-slate-500 font-black uppercase tracking-widest opacity-80">
+                   Workflow: Selecione sua posição, depois a do oponente
+                </p>
              </div>
 
              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col">
-                   <span className="text-[8px] uppercase tracking-tighter text-slate-500 font-bold">Blinds / Ante</span>
-                   <div className="text-sm font-mono font-black text-slate-200">
-                      Level {phase * 4} <span className="text-slate-600">|</span> {stack > 50 ? '250/500' : '2k/4k'} <span className="text-orange-500/80">(A)</span>
-                   </div>
-                </div>
+                 <div className="flex flex-col">
+                    <span className="text-[8px] uppercase tracking-tighter text-slate-500 font-black mb-1">Fase do Torneio (Ajuste Manual)</span>
+                    <div className="grid grid-cols-5 gap-1.5">
+                       {PHASES.map(ph => (
+                          <button 
+                             key={ph.id}
+                             onClick={() => setPhase(ph.id as Phase)}
+                             className={`flex flex-col items-center py-2 rounded-lg border transition-all ${phase === ph.id ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' : 'bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700'}`}
+                          >
+                             <span className="text-[9px] font-black italic uppercase">{ph.label.split(' ')[0]}</span>
+                             <span className="text-[7px] font-mono opacity-60">PH-{ph.id}</span>
+                          </button>
+                       ))}
+                    </div>
+                 </div>
                 <div className="flex flex-col items-end">
                    <span className="text-[8px] uppercase tracking-tighter text-slate-500 font-bold">Média do Torneio</span>
                    <div className="text-sm font-mono font-black text-blue-400">
