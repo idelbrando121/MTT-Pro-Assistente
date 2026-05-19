@@ -293,13 +293,50 @@ const evaluateMTT = (
       villainReasoning += " [ESTRATÉGIA NEURAL OTIMIZADA: Nash v4.2]";
     }
 
-    const handKey = (hand || '').toLowerCase().replace(/[eocp]/g, 'x'); 
+    let h = (hand || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cardRegexForGTO = /([2-9tjqka]|10)[hsdc♥♦♣♠eocp]/gi;
+    const cardsForGTO = (hand || '').match(cardRegexForGTO);
+    if (cardsForGTO && cardsForGTO.length >= 2) {
+      const normalizeRank = (c: string) => {
+        let trimmed = c.trim();
+        let r = trimmed.startsWith('10') ? 'T' : trimmed[0].toUpperCase();
+        return r;
+      };
+      const normalizeSuitForGTO = (c: string) => {
+        let s = c.trim().substring(c.trim().startsWith('10') ? 2 : 1).toLowerCase();
+        const suitMap: Record<string, string> = {
+          '♥': 'h', 'h': 'h', 'c': 'c', '♦': 'd', 'd': 'd', '♣': 'c', 'spade': 's', 'espada': 's', '♠': 's'
+        };
+        return suitMap[s] || s;
+      };
+      const r1 = normalizeRank(cardsForGTO[0]);
+      const r2 = normalizeRank(cardsForGTO[1]);
+      const s1 = normalizeSuitForGTO(cardsForGTO[0]);
+      const s2 = normalizeSuitForGTO(cardsForGTO[1]);
+      
+      const rankOrder = "AKQJT98765432";
+      let p1 = r1;
+      let p2 = r2;
+      if (rankOrder.indexOf(r1) > rankOrder.indexOf(r2)) {
+        p1 = r2;
+        p2 = r1;
+      }
+      
+      if (p1 === p2) {
+        h = (p1 + p2).toLowerCase();
+      } else if (s1 === s2) {
+        h = (p1 + p2 + 's').toLowerCase();
+      } else {
+        h = (p1 + p2 + 'o').toLowerCase();
+      }
+    }
+
+    const handKey = h.replace(/[eocp]/g, 'x'); 
     const stackType = stack < 20 ? 'SHORT' : stack < 50 ? 'MEDIUM' : 'DEEP';
     const history = learningData[`${handKey}:${pos}:${stackType}:${phase}`];
 
     // PRE-FLOP LOGIC (Professional Tiers)
     if (board === '') {
-      const h = hand.toLowerCase().replace(/[^a-z0-9]/g, '');
       let category: 'EP' | 'MP' | 'CO' | 'BTN' | 'SB' | 'BB' = 'EP';
       if (pos === 'UTG' || pos === 'UTG+1' || pos === 'UTG+2') category = 'EP';
       else if (pos === 'LJ' || pos === 'HJ') category = 'MP';
@@ -621,6 +658,7 @@ export default function App() {
   const [turn, setTurn] = useState('');
   const [river, setRiver] = useState('');
   const [street, setStreet] = useState<Street>('PRE');
+  const [handSuit, setHandSuit] = useState<'h' | 'd' | 'c' | 's' | null>(null);
   const [villainPos, setVillainPos] = useState<VillainPosition>('NONE');
   const [villainAction, setVillainAction] = useState<VillainAction>('NONE');
   const [villainProfile, setVillainProfile] = useState<VillainProfile>('MEDIO');
@@ -753,10 +791,81 @@ export default function App() {
     };
   }, [villains]);
 
+  const evaluatedHand = useMemo(() => {
+    if (!hand) return '';
+    const hNorm = hand.toLowerCase();
+    
+    // If it already contains specific suits (example "Ah Kh"), use directly
+    const cardRegex = /([2-9tjqka]|10)[hsdc♥♦♣♠eo cp]/gi;
+    const matched = hand.match(cardRegex);
+    if (matched && matched.length >= 2) {
+      return hand;
+    }
+    
+    const ranks = hand.replace(/[^2-9tjqka10]/gi, '').toUpperCase();
+    let r1 = '';
+    let r2 = '';
+    if (ranks.startsWith('10')) {
+      r1 = 'T';
+      const remaining = ranks.substring(2);
+      r2 = remaining.startsWith('10') ? 'T' : (remaining[0] || '');
+    } else {
+      r1 = ranks[0] || '';
+      const remaining = ranks.substring(1);
+      r2 = remaining.startsWith('10') ? 'T' : (remaining[0] || '');
+    }
+    
+    if (r1 && r2 && r1 !== r2) {
+      const activeSuit = handSuit || 's'; // Default to Spades if none selected
+      if (hNorm.includes('s')) {
+        return `${r1}${activeSuit} ${r2}${activeSuit}`;
+      }
+      if (hNorm.includes('o')) {
+        const firstSuit = activeSuit;
+        const secondSuit = firstSuit === 'h' ? 's' : 'h';
+        return `${r1}${firstSuit} ${r2}${secondSuit}`;
+      }
+    }
+    return hand;
+  }, [hand, handSuit]);
+
+  const currentHeroCards = useMemo(() => {
+    if (!hand) return [];
+    
+    const normalize = (c: string) => {
+      if (!c || c.length < 2) return null;
+      let r = '';
+      let s = '';
+      const trimmed = c.trim();
+      if (trimmed.startsWith('10')) {
+        r = '10';
+        s = trimmed.substring(2);
+      } else {
+        r = trimmed[0].toUpperCase();
+        s = trimmed.substring(1);
+      }
+      
+      const suitMap: Record<string, { symbol: string; color: string; bg: string; border: string }> = {
+        'h': { symbol: '♥', color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/20' },
+        'd': { symbol: '♦', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+        'c': { symbol: '♣', color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+        's': { symbol: '♠', color: 'text-slate-200', bg: 'bg-slate-800/80', border: 'border-slate-700/50' }
+      };
+      
+      const char = s[0]?.toLowerCase() || 's';
+      const suitInfo = suitMap[char] || suitMap['s'];
+      return { rank: r, ...suitInfo };
+    };
+
+    const cardRegex = /([2-9tjqka]|10)[hsdc♥♦♣♠exy]/gi;
+    const tokens = evaluatedHand.toLowerCase().match(cardRegex) || [];
+    return tokens.map(normalize).filter(Boolean);
+  }, [hand, evaluatedHand]);
+
   const result = useMemo(() => {
     if (!hand) return null;
     return evaluateMTT(
-      hand, 
+      evaluatedHand, 
       pos, 
       stack, 
       phase, 
@@ -770,7 +879,7 @@ export default function App() {
       consolidatedVillain.playersInPot, 
       trainingConfidence
     );
-  }, [hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, consolidatedVillain, trainingConfidence]);
+  }, [evaluatedHand, pos, stack, phase, pot, betToCall, fullBoard, learningData, consolidatedVillain, trainingConfidence]);
 
   const canContinue = useMemo(() => {
     if (street === 'PRE') return hand.length >= 2;
@@ -798,6 +907,7 @@ export default function App() {
     setVillainAction('NONE');
     setVillainPos('NONE');
     setVillains({});
+    setHandSuit(null);
   };
 
   const recordOutcome = (won: boolean) => {
@@ -1059,9 +1169,29 @@ export default function App() {
                     if (val.toLowerCase() === 'desistir') handleFold();
                     else setHand(val);
                   }}
-                  className="bg-slate-900 border-2 border-slate-700 text-5xl p-5 font-mono font-black text-white text-center focus:border-blue-500/50 outline-none rounded-2xl uppercase shadow-inner"
+                  className="bg-slate-900 border-2 border-slate-700 text-5xl p-5 font-mono font-black text-white text-center focus:border-blue-500/50 outline-none rounded-2xl uppercase shadow-inner animate-in fade-in zoom-in-95 duration-200"
                   placeholder="---"
                 />
+
+                {/* Visual Cards Preview */}
+                {currentHeroCards.length > 0 && (
+                  <div className="flex justify-center gap-3.5 my-1.5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                     {currentHeroCards.map((card, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`w-14 h-20 rounded-xl border flex flex-col justify-between p-2 shadow-lg hover:scale-105 transition-all bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 ${card.border}`}
+                        >
+                           <div className="flex items-center justify-between leading-none">
+                              <span className="text-xs font-black text-slate-100">{card.rank === 'T' ? '10' : card.rank}</span>
+                              <span className={`text-xs ${card.color}`}>{card.symbol}</span>
+                           </div>
+                           <div className="flex justify-center items-center">
+                              <span className={`text-4xl leading-none font-bold ${card.color}`}>{card.symbol}</span>
+                           </div>
+                        </div>
+                     ))}
+                  </div>
+                )}
                 
                 {hand.length === 2 && hand[0] !== hand[1] && (
                   <div className="flex gap-2">
@@ -1077,6 +1207,45 @@ export default function App() {
                     >
                       OFFSUIT (o)
                     </button>
+                  </div>
+                )}
+
+                {/* Suit Selector for starting hand */}
+                {(hand.toLowerCase().includes('s') || hand.toLowerCase().includes('o')) && (
+                  <div className="flex flex-col gap-2 p-3 bg-slate-900/50 border border-slate-800/80 rounded-xl mt-1 animate-in fade-in duration-200">
+                     <div className="flex justify-between items-center">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest font-bold">Naipe das suas cartas</span>
+                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase border ${
+                           (handSuit || 's') === 'h' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                           (handSuit || 's') === 'd' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                           (handSuit || 's') === 'c' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                           'bg-white/10 text-white border-white/20'
+                        }`}>
+                           {(handSuit || 's') === 'h' ? '♥ COPAS' :
+                            (handSuit || 's') === 'd' ? '♦ OUROS' :
+                            (handSuit || 's') === 'c' ? '♣ PAUS' :
+                            '♠ ESPADAS'}
+                        </span>
+                     </div>
+                     <div className="grid grid-cols-4 gap-1.5">
+                       {[
+                         { id: 'h', label: '♥', color: 'text-red-500 hover:bg-slate-800 active:bg-red-500/10 border-red-500/20', activeBg: 'bg-red-500/20 border-red-500/50 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.3)]' },
+                         { id: 'd', label: '♦', color: 'text-blue-400 hover:bg-slate-800 active:bg-blue-500/10 border-blue-500/20', activeBg: 'bg-blue-500/20 border-blue-500/50 text-blue-300 shadow-[0_0_12px_rgba(96,165,250,0.3)]' },
+                         { id: 'c', label: '♣', color: 'text-emerald-500 hover:bg-slate-800 active:bg-emerald-500/10 border-emerald-500/20', activeBg: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.3)]' },
+                         { id: 's', label: '♠', color: 'text-white hover:bg-slate-800 active:bg-white/10 border-white/20', activeBg: 'bg-white/20 border-white/50 text-white' }
+                       ].map(sOption => (
+                         <button
+                           key={sOption.id}
+                           type="button"
+                           onClick={() => setHandSuit(sOption.id as any)}
+                           className={`py-2 border rounded-lg font-black text-xl transition-all shadow-sm ${
+                             (handSuit || 's') === sOption.id ? sOption.activeBg : `bg-slate-950/60 border-slate-800/80 ${sOption.color}`
+                           }`}
+                         >
+                           {sOption.label}
+                         </button>
+                       ))}
+                     </div>
                   </div>
                 )}
               </div>
