@@ -631,6 +631,8 @@ export default function App() {
     return saved ? JSON.parse(saved) : {};
   });
   
+  const [villains, setVillains] = useState<Record<string, { action: VillainAction; profile: VillainProfile }>>({});
+  
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [isTraining, setIsTraining] = useState(false);
@@ -690,6 +692,18 @@ export default function App() {
     setVillainAction(sc.villainAction);
     setVillainProfile(sc.villainProfile);
     setPlayersInPot(sc.playersInPot);
+    
+    // Convert single loaded scenario villain into villains map
+    if (sc.villainPos && sc.villainPos !== 'NONE') {
+      setVillains({
+        [sc.villainPos as Position]: {
+          action: sc.villainAction || 'RAISE',
+          profile: sc.villainProfile || 'MEDIO'
+        }
+      });
+    } else {
+      setVillains({});
+    }
   };
 
   const handleRandomScenario = () => {
@@ -699,10 +713,64 @@ export default function App() {
 
   const fullBoard = [flop, turn, river].filter(Boolean).join(' ');
 
+  const consolidatedVillain = useMemo(() => {
+    const villainList = Object.entries(villains) as Array<[Position, { action: VillainAction; profile: VillainProfile }]>;
+    if (villainList.length === 0) {
+      return {
+        pos: 'NONE' as VillainPosition,
+        action: 'NONE' as VillainAction,
+        profile: 'MEDIO' as VillainProfile,
+        playersInPot: 1
+      };
+    }
+
+    const actionRank: Record<VillainAction, number> = {
+      'ALL-IN': 4,
+      'RAISE': 3,
+      'CALL': 2,
+      'NONE': 1,
+      'FOLD': 0
+    };
+
+    let bestPos = villainList[0][0] as VillainPosition;
+    let bestData = villainList[0][1];
+
+    for (let i = 1; i < villainList.length; i++) {
+      const [p, data] = villainList[i];
+      if (actionRank[data.action] > actionRank[bestData.action]) {
+        bestPos = p as VillainPosition;
+        bestData = data;
+      }
+    }
+
+    const activeCount = villainList.filter(([_, data]) => data.action !== 'FOLD').length;
+
+    return {
+      pos: bestPos,
+      action: bestData.action,
+      profile: bestData.profile,
+      playersInPot: 1 + activeCount
+    };
+  }, [villains]);
+
   const result = useMemo(() => {
     if (!hand) return null;
-    return evaluateMTT(hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile, playersInPot, trainingConfidence);
-  }, [hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, villainPos, villainAction, villainProfile, playersInPot, trainingConfidence]);
+    return evaluateMTT(
+      hand, 
+      pos, 
+      stack, 
+      phase, 
+      pot, 
+      betToCall, 
+      fullBoard, 
+      learningData, 
+      consolidatedVillain.pos, 
+      consolidatedVillain.action, 
+      consolidatedVillain.profile, 
+      consolidatedVillain.playersInPot, 
+      trainingConfidence
+    );
+  }, [hand, pos, stack, phase, pot, betToCall, fullBoard, learningData, consolidatedVillain, trainingConfidence]);
 
   const canContinue = useMemo(() => {
     if (street === 'PRE') return hand.length >= 2;
@@ -729,6 +797,7 @@ export default function App() {
     setBetToCall(0);
     setVillainAction('NONE');
     setVillainPos('NONE');
+    setVillains({});
   };
 
   const recordOutcome = (won: boolean) => {
@@ -873,7 +942,7 @@ export default function App() {
                       const x = Math.cos(angle) * 32;
                       const y = Math.sin(angle) * 18;
                       const isUser = pos === p;
-                      const isVillain = villainPos === p;
+                      const isVillain = !!villains[p];
                       
                       return (
                          <div 
@@ -887,12 +956,21 @@ export default function App() {
                               onClick={() => {
                                  if (selectionMode === 'HERO') {
                                     setPos(p);
-                                    if (villainPos === p) setVillainPos('NONE');
+                                    const updated = { ...villains };
+                                    if (updated[p]) {
+                                       delete updated[p];
+                                       setVillains(updated);
+                                    }
                                     setSelectionMode('VILLAIN'); // Auto-switch for workflow
                                  } else {
-                                    setVillainPos(p as VillainPosition);
-                                    if (pos === p) setPos('BTN'); // Move Hero if sharing same seat
-                                    if (villainAction === 'NONE') setVillainAction('RAISE');
+                                    const updated = { ...villains };
+                                    if (updated[p]) {
+                                       delete updated[p];
+                                    } else {
+                                       if (pos === p) setPos('BTN'); // Move Hero if sharing same seat
+                                       updated[p] = { action: 'RAISE', profile: 'MEDIO' };
+                                    }
+                                    setVillains(updated);
                                  }
                               }}
                               className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-[9px] font-black transition-all cursor-pointer ${
@@ -911,7 +989,7 @@ export default function App() {
                 </div>
                 
                 <p className="absolute bottom-2 text-[6px] text-slate-500 font-black uppercase tracking-widest opacity-80">
-                   Workflow: Selecione sua posição, depois a do oponente
+                   Workflow: Selecione o Hero, depois marque os adversários (múltiplos vilões permitidos!)
                 </p>
              </div>
 
@@ -1077,49 +1155,96 @@ export default function App() {
              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-3.5 h-3.5 text-orange-500" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Villain Engine</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Painel de Vilões Ativos</span>
                 </div>
                 <div className="flex gap-1">
-                   {[1, 2, 3, 4, 5].map(n => (
-                     <div key={n} className={`w-1.5 h-1.5 rounded-full ${playersInPot >= n ? 'bg-orange-500 animate-pulse' : 'bg-slate-800'}`}></div>
+                   {Array.from({ length: 5 }).map((_, n) => (
+                     <div key={n} className={`w-1.5 h-1.5 rounded-full ${consolidatedVillain.playersInPot >= (n + 1) ? 'bg-orange-500 animate-pulse' : 'bg-slate-800'}`}></div>
                    ))}
                 </div>
              </div>
-             
-             <div className="grid grid-cols-2 gap-2">
-                <div className="flex flex-col gap-2">
-                   <label className="text-[9px] uppercase text-slate-500 font-black">Posição</label>
-                   <div className="grid grid-cols-3 gap-1">
-                     {(['EP', 'MP', 'CO', 'BTN', 'SB', 'BB'] as VillainPosition[]).map(vp => (
-                       <button 
-                        key={vp}
-                        onClick={() => setVillainPos(vp)}
-                        className={`py-1 text-[9px] font-black rounded border ${villainPos === vp ? 'bg-red-600 border-red-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-slate-700'}`}
-                       >
-                         {vp}
-                       </button>
-                     ))}
+              
+             <div className="flex flex-col gap-3">
+                {Object.keys(villains).length === 0 ? (
+                   <div className="text-center py-6 px-4 bg-slate-900/40 border border-slate-800 rounded-xl flex flex-col items-center gap-2">
+                      <span className="text-[20px]">👾</span>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Nenhum vilão selecionado</p>
+                      <p className="text-[9px] text-slate-600 leading-normal max-w-[240px]">
+                         Clique em <span className="text-red-400 font-black">SET VILÃO</span> no HUD da mesa acima para colocar um ou mais adversários na simulação.
+                      </p>
                    </div>
-                </div>
+                ) : (
+                   <div className="flex flex-col gap-3 max-h-64 overflow-y-auto pr-1">
+                      {Object.entries(villains).map(([vPos, vData]) => (
+                         <div key={vPos} className="p-3 bg-slate-900/80 border border-slate-800/80 rounded-xl flex flex-col gap-2.5 hover:border-slate-700 transition-all">
+                            <div className="flex items-center justify-between">
+                               <div className="flex items-center gap-2">
+                                  <div className="w-3 h-3 rounded-full bg-red-600 border border-red-300 scale-110 shadow-[0_0_8px_rgba(239,68,68,0.5)] flex items-center justify-center text-[7px] font-black text-white" />
+                                  <span className="text-[11px] font-black uppercase tracking-widest text-white">Posição: {vPos}</span>
+                               </div>
+                               <button 
+                                 onClick={() => {
+                                    const updated = { ...villains };
+                                    delete updated[vPos];
+                                    setVillains(updated);
+                                 }}
+                                 className="text-[9px] font-black text-slate-500 hover:text-red-400 transition-colors uppercase"
+                               >
+                                  [Remover]
+                               </button>
+                            </div>
 
-                <div className="flex flex-col gap-2">
-                   <label className="text-[9px] uppercase text-slate-500 font-black">Ação do Vilão</label>
-                   <div className="grid grid-cols-2 gap-1.5">
-                     {(['FOLD', 'CALL', 'RAISE', 'ALL-IN', 'NONE'] as VillainAction[]).map(va => (
-                       <button 
-                        key={va}
-                        onClick={() => setVillainAction(va)}
-                        className={`py-2 text-[9px] font-black rounded border transition-all ${villainAction === va ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-slate-700'}`}
-                       >
-                         {va === 'NONE' ? 'CHECK' : va}
-                       </button>
-                     ))}
-                   </div>
-                </div>
-             </div>
+                            <div className="grid grid-cols-2 gap-3.5">
+                               <div className="flex flex-col gap-1.5">
+                                  <label className="text-[8px] font-black text-slate-500 uppercase tracking-wider">Perfil de Jogo</label>
+                                  <div className="grid grid-cols-3 gap-1 p-0.5 bg-slate-950 rounded border border-slate-800">
+                                     {([
+                                        { id: 'AGRESSIVO', label: 'AGR' },
+                                        { id: 'MEDIO', label: 'STD' },
+                                        { id: 'TIGHT', label: 'TGT' }
+                                     ] as const).map(p => (
+                                        <button 
+                                          key={p.id}
+                                          onClick={() => {
+                                             setVillains(prev => ({
+                                                ...prev,
+                                                [vPos]: { ...prev[vPos]!, profile: p.id }
+                                             }));
+                                          }}
+                                          className={`py-1 text-[8px] font-black rounded-md border transition-all ${(vData as any).profile === p.id ? 'bg-red-600 border-red-500 text-white shadow-sm' : 'bg-slate-900 border-transparent text-slate-500 hover:text-slate-400'}`}
+                                        >
+                                           {p.label}
+                                        </button>
+                                     ))}
+                                  </div>
+                               </div>
 
-
-          </div>
+                               <div className="flex flex-col gap-1.5">
+                                  <label className="text-[8px] font-black text-slate-500 uppercase tracking-wider">Última Ação</label>
+                                  <div className="grid grid-cols-5 gap-0.5 p-0.5 bg-slate-950 rounded border border-slate-800">
+                                     {(['FOLD', 'CALL', 'RAISE', 'ALL-IN', 'NONE'] as VillainAction[]).map(va => (
+                                        <button 
+                                          key={va}
+                                          onClick={() => {
+                                             setVillains(prev => ({
+                                                ...prev,
+                                                [vPos]: { ...prev[vPos]!, action: va }
+                                             }));
+                                          }}
+                                          className={`py-1 text-[7px] font-black rounded transition-all ${(vData as any).action === va ? 'bg-orange-600 text-white' : 'text-slate-500 hover:text-slate-400'}`}
+                                         >
+                                            {va === 'NONE' ? 'CHECK' : va}
+                                         </button>
+                                      ))}
+                                   </div>
+                                </div>
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                 )}
+              </div>
+           </div>
 
           {/* NEURAL TRAINING LAB */}
           <div className="p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-2xl shadow-xl flex flex-col gap-3 relative overflow-hidden">
