@@ -628,6 +628,7 @@ export default function App() {
   const [trainingConfidence, setTrainingConfidence] = useState(0.85);
 
   const startMassiveTraining = () => {
+    console.log("Starting massive training simulation...");
     if (isTraining) return;
     setIsTraining(true);
     setTrainingHands(0);
@@ -641,10 +642,6 @@ export default function App() {
         setTimeout(() => {
           setIsTraining(false);
           setTrainingConfidence(0.99);
-          // Adiciona um feedback visual de sucesso
-          const audio = new Audio('https://assets.mixkit.net/active_storage/sfx/2869/2869-preview.mp3');
-          audio.volume = 0.2;
-          audio.play().catch(() => {}); // Ignora se o navegador bloquear
         }, 500);
         return;
       }
